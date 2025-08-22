@@ -148,20 +148,114 @@ bind_port = 7878
 mqtt_broker_address = "tcp://test.mosquitto.org:1883"
 
 ```
-## 🗺️ Roadmap
-We have an exciting future planned for MerkleKV! Here are some features we're looking to add:
+## 🗺️ Roadmap & Implementation Issues
 
-[ ] KeyValue Node: Each node is an independent server instance, holding a complete replica of the dataset.
+We have an exciting future planned for MerkleKV! Below is a comprehensive issue list for implementing the key features and architecture components described above.
 
-[ ] InMemory Storage Engine: The core component responsible for the actual key-value data storage and the management of the Merkle tree structure.
+### Phase 1: Core Foundation
+**Priority: High** - Essential components for basic functionality
 
-[ ] Client Protocol Listener: A TCP listener that parses and handles client commands (SET, GET, DEL) using a simple, text-based protocol.
+- [ ] **Issue #1: Project Structure & Build System**
+  - Set up Cargo workspace and project structure
+  - Configure dependencies (tokio, serde, toml, etc.)
+  - Set up CI/CD pipeline and testing framework
+  - Create basic configuration system
 
-[ ] Persistent Storage: Integrate Sled for on-disk persistence.
+- [ ] **Issue #2: Storage Engine Foundation**
+  - Implement in-memory key-value storage with HashMap
+  - Add thread-safe access patterns using RwLock/Mutex
+  - Create basic CRUD operations (Create, Read, Update, Delete)
+  - Implement key-value serialization/deserialization
 
-[ ] Replication Module: Manages the connection to the MQTT broker for publishing local changes and subscribing to updates from other nodes.
+- [ ] **Issue #3: Merkle Tree Implementation**
+  - Design and implement Merkle tree data structure
+  - Add lexicographical key sorting functionality
+  - Implement hash computation for leaf and internal nodes
+  - Create root hash calculation and tree traversal methods
 
-[ ] Advanced Conflict Resolution: Implement Vector Clocks for more robust conflict handling.
+### Phase 2: Client Interface
+**Priority: High** - User-facing functionality
+
+- [ ] **Issue #4: TCP Protocol Listener**
+  - Implement asynchronous TCP server using Tokio
+  - Create command parser for SET, GET, DEL operations
+  - Add protocol validation and error handling
+  - Implement response formatting and client communication
+
+- [ ] **Issue #5: Client Command Processing**
+  - Integrate TCP listener with storage engine
+  - Add command execution logic for all operations
+  - Implement proper error responses and status codes
+  - Add basic logging and monitoring capabilities
+
+### Phase 3: Distributed System Core
+**Priority: High** - Replication and consistency
+
+- [ ] **Issue #6: MQTT Integration**
+  - Integrate MQTT client library (rumqttmqtt or similar)
+  - Implement connection management and reconnection logic
+  - Create message publishing for local changes
+  - Add subscription handling for remote updates
+
+- [ ] **Issue #7: Replication Module**
+  - Design change event format and serialization
+  - Implement change publishing on local operations
+  - Add remote change application logic
+  - Handle basic conflict resolution (last-write-wins)
+
+- [ ] **Issue #8: Anti-Entropy Mechanism**
+  - Implement periodic peer discovery and selection
+  - Create Merkle tree comparison protocol
+  - Add efficient tree traversal for inconsistency detection
+  - Implement repair operations for divergent data
+
+### Phase 4: Advanced Features
+**Priority: Medium** - Performance and reliability improvements
+
+- [ ] **Issue #9: Configuration Management**
+  - Implement TOML configuration parsing
+  - Add runtime configuration validation
+  - Create configuration hot-reloading capability
+  - Add environment variable override support
+
+- [ ] **Issue #10: Persistent Storage Backend**
+  - Integrate Sled embedded database for disk persistence
+  - Implement write-ahead logging (WAL) for durability
+  - Add database recovery and initialization logic
+  - Create storage engine abstraction layer
+
+- [ ] **Issue #11: Performance Optimizations**
+  - Implement connection pooling and reuse
+  - Add batching for multiple operations
+  - Optimize Merkle tree updates and caching
+  - Add metrics collection and performance monitoring
+
+### Phase 5: Production Readiness
+**Priority: Low** - Enhanced robustness and features
+
+- [ ] **Issue #12: Advanced Conflict Resolution**
+  - Implement Vector Clocks for causality tracking
+  - Add sophisticated conflict detection algorithms
+  - Create conflict resolution strategies (manual/automatic)
+  - Add conflict history and audit trails
+
+- [ ] **Issue #13: Monitoring & Observability**
+  - Implement structured logging with tracing
+  - Add Prometheus metrics endpoint
+  - Create health check endpoints
+  - Add distributed tracing support
+
+- [ ] **Issue #14: Security & Authentication**
+  - Add TLS support for client connections
+  - Implement MQTT authentication mechanisms
+  - Add access control and authorization
+  - Create secure configuration management
+
+- [ ] **Issue #15: Documentation & Tooling**
+  - Create comprehensive API documentation
+  - Add deployment guides and examples
+  - Create client libraries for popular languages
+  - Add benchmarking and testing tools
 
 ## 🙌 Contributing
 Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
