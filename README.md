@@ -70,8 +70,7 @@ You can interact with a `MerkleKV` node using any TCP client, like `netcat` or `
 
 ```bash
 telnet localhost 7878
-```bash
-telnet localhost 7878
+
 ```
 SET: Store a key-value pair.
 
