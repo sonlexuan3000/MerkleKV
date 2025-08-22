@@ -110,8 +110,11 @@ mqtt_broker_address = "tcp://test.mosquitto.org:1883"
 We have an exciting future planned for MerkleKV! Here are some features we're looking to add:
 
 [ ] KeyValue Node: Each node is an independent server instance, holding a complete replica of the dataset.
+
 [ ] InMemory Storage Engine: The core component responsible for the actual key-value data storage and the management of the Merkle tree structure.
+
 [ ] Client Protocol Listener: A TCP listener that parses and handles client commands (SET, GET, DEL) using a simple, text-based protocol.
+
 [ ] Persistent Storage: Integrate Sled for on-disk persistence.
 
 [ ] Replication Module: Manages the connection to the MQTT broker for publishing local changes and subscribing to updates from other nodes.
