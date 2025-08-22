@@ -38,7 +38,7 @@ The system consists of a cluster of `MerkleKV` nodes. There is no leader node; a
 ### Prerequisites
 
 * **Rust Toolchain**: Install via [rustup](https://rustup.rs/).
-* **MQTT Broker**: A running instance of an MQTT broker like [Mosquitto](https://mosquitto.org/) or [EMQ X](https://www.emqx.io/).
+* **MQTT Broker**: A running instance of an MQTT broker like [Mosquitto](https://mosquitto.org/) 
 
 ### Installation & Running
 
