@@ -2,7 +2,7 @@
 
 A high-performance, distributed key-value store with self-healing replication, built in Rust.
 
-[![CI/CD Status](https://img.shields.io/github/actions/workflow/status/your-username/merkledb/ci.yml?branch=main&style=for-the-badge)](https://github.com/your-username/merkledb/actions)
+[![CI/CD Status](https://img.shields.io/github/actions/workflow/status/AI-Decenter/MerkleKV/ci.yml?branch=main&style=for-the-badge)](https://github.com/AI-Decenter/MerkleKV/actions)
 [![Crates.io](https://img.shields.io/crates/v/merkledb.svg?style=for-the-badge)](https://crates.io/crates/merkledb)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
