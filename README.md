@@ -30,8 +30,50 @@ The system consists of a cluster of `MerkleKV` nodes. There is no leader node; a
 3.  **Synchronization (Repair Path)**: In the background, each node periodically gossips with a random peer, comparing the root hash of their Merkle trees. If the hashes differ, they efficiently traverse the trees to find and repair the exact keys that are inconsistent.
 
 
+### Components 
 
+KeyValue Node: Each node is an independent server instance, holding a complete replica of the dataset.
+
+Storage Engine: The core component responsible for the actual key-value data storage and the management of the Merkle tree structure.
+
+Client Protocol Listener: A TCP listener that parses and handles client commands (SET, GET, DEL) using a simple, text-based protocol.
+
+Replication Module: Manages the connection to the MQTT broker for publishing local changes and subscribing to updates from other nodes.
+
+Anti-Entropy Module: A background process that periodically initiates a Merkle tree comparison with other peer nodes to detect and repair any data inconsistencies.
+
+MQTT Broker: An external message broker (e.g., Mosquitto, EMQ X) that facilitates the pub/sub communication for update propagation.
+ 
 ---
+
+### 2. Core Data Structure: The Merkle Tree
+
+The Merkle tree is the foundation of our efficient data verification strategy. It allows us to verify the integrity of the entire dataset by comparing a single hash, and to rapidly locate inconsistencies if they exist.
+
+Tree Construction:
+
+All keys in the store are sorted lexicographically.
+
+Each (key, value) pair is hashed to form a leaf node in the tree (e.g., using hash(key + value)).
+
+Adjacent nodes are then concatenated and hashed together to form a parent node.
+
+This process is repeated recursively until a single root hash is generated, which represents the state of the entire dataset.
+
+Synchronization Process:
+
+Node A requests the root hash from Node B.
+
+If the root hashes match, the data is considered in-sync, and the process ends.
+
+If the hashes differ, Node A requests the children of the root node from Node B.
+
+Node A compares the received child hashes with its own. By identifying the mismatched child hash, it knows which branch of the tree contains the inconsistency.
+
+This process repeats, traversing down the tree only along the divergent paths. The search complexity is O(
+logn).
+
+Once a leaf node is identified as different, Node A has found the inconsistent key. It then requests the correct value from Node B and updates its local store.
 
 ## 🔧 Getting Started
 
