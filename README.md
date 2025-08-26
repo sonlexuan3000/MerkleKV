@@ -399,7 +399,7 @@ Before setting up MerkleKV, ensure you have the following dependencies installed
 5. **Test the connection**
    ```bash
    # In another terminal
-   telnet localhost 7878
+   nc localhost 7878
    
    # Try some commands
    SET hello world
@@ -486,16 +486,13 @@ For a more realistic setup with replication and anti-entropy:
 3. **Test replication**
    ```bash
    # Connect to node 1
-   telnet localhost 7878
-   SET user:alice "Alice Johnson"
+   echo "SET user:alice \"Alice Johnson\"" | nc localhost 7878
    
    # Connect to node 2 (different terminal)
-   telnet localhost 7879
-   GET user:alice  # Should return "Alice Johnson"
+   echo "GET user:alice" | nc localhost 7879  # Should return "Alice Johnson"
    
    # Connect to node 3 (different terminal)
-   telnet localhost 7880
-   GET user:alice  # Should return "Alice Johnson"
+   echo "GET user:alice" | nc localhost 7880  # Should return "Alice Johnson"
    ```
 
 ### Verification & Testing
@@ -568,7 +565,7 @@ sudo journalctl -u mosquitto -f
 grep "anti-entropy" /var/log/merkle-kv/*.log
 
 # Verify peer connectivity
-telnet <peer-ip> <peer-port>
+nc -v <peer-ip> <peer-port>
 ```
 
 ### Performance Tuning
@@ -595,7 +592,7 @@ level = "warn"  # Reduce log verbosity
 
 ## 📚 Usage (Client API)
 
-MerkleKV uses a simple, text-based protocol similar to Memcached. You can interact with any `MerkleKV` node using standard TCP clients like `netcat`, `telnet`, or custom applications.
+MerkleKV uses a simple, text-based protocol similar to Memcached. You can interact with any `MerkleKV` node using standard TCP clients like `netcat` (nc) or custom applications.
 
 ### Protocol Overview
 
@@ -607,14 +604,14 @@ MerkleKV uses a simple, text-based protocol similar to Memcached. You can intera
 ### Connecting to a Node
 
 ```bash
-# Using telnet
-telnet localhost 7878
-
-# Using netcat
+# Basic connection
 nc localhost 7878
 
-# Using curl (for testing)
-curl telnet://localhost:7878
+# Using netcat with timeout
+nc -w 5 localhost 7878
+
+# Using netcat with verbose output
+nc -v localhost 7878
 ```
 
 ### Available Commands
@@ -681,10 +678,8 @@ NOT_FOUND
 ### Interactive Session Example
 
 ```bash
-$ telnet localhost 7878
-Trying 127.0.0.1...
-Connected to localhost.
-Escape character is '^]'.
+$ nc -v localhost 7878
+Connection to localhost 7878 port [tcp/*] succeeded!
 
 # Store some data
 SET user:alice Alice Smith
@@ -718,8 +713,7 @@ GET user:bob
 (null)
 
 # Close connection
-^]
-telnet> quit
+# Use Ctrl+C or Ctrl+D to exit
 Connection closed.
 ```
 
