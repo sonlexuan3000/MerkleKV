@@ -1,0 +1,11 @@
+host = "127.0.0.1"
+port = 7379
+storage_path = "data"
+sync_interval_seconds = 60
+
+[replication]
+enabled = false
+mqtt_broker = "localhost"
+mqtt_port = 1883
+topic_prefix = "merkle_kv"
+client_id = "node1"
