@@ -192,6 +192,190 @@ impl KVEngineStoreTrait for RwLockEngine {
         let data = self.data.read().unwrap();
         data.is_empty()
     }
+    
+    /// Increment a numeric value.
+    ///
+    /// This method acquires an **exclusive write lock** to ensure thread safety.
+    /// If the key doesn't exist, it will be created with a value of the increment amount.
+    /// If the key exists but the value is not a valid number, an error is returned.
+    ///
+    /// # Arguments
+    /// * `key` - The key to increment
+    /// * `amount` - The amount to increment by (default: 1)
+    ///
+    /// # Returns
+    /// * `Result<i64>` - The new value after incrementing, or error if not a valid number
+    ///
+    /// # Thread Safety
+    /// Only one thread can increment at a time. Other threads will wait for the
+    /// write lock to be released.
+    fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64> {
+        // Acquire exclusive write lock
+        let mut data = self.data.write().unwrap();
+        
+        // Default increment amount is 1
+        let increment_by = amount.unwrap_or(1);
+        
+        // Get the current value or initialize to 0
+        let current_value = match data.get(key) {
+            Some(value) => {
+                // Try to parse the current value as a number
+                value.parse::<i64>().map_err(|_| {
+                    anyhow::anyhow!("Value for key '{}' is not a valid number", key)
+                })?
+            }
+            None => 0, // Key doesn't exist, start from 0
+        };
+        
+        // Calculate the new value
+        let new_value = current_value + increment_by;
+        
+        // Store the new value
+        data.insert(key.to_string(), new_value.to_string());
+        
+        Ok(new_value)
+    }
+    
+    /// Decrement a numeric value.
+    ///
+    /// This method acquires an **exclusive write lock** to ensure thread safety.
+    /// If the key doesn't exist, it will be created with a value of the negative decrement amount.
+    /// If the key exists but the value is not a valid number, an error is returned.
+    ///
+    /// # Arguments
+    /// * `key` - The key to decrement
+    /// * `amount` - The amount to decrement by (default: 1)
+    ///
+    /// # Returns
+    /// * `Result<i64>` - The new value after decrementing, or error if not a valid number
+    ///
+    /// # Thread Safety
+    /// Only one thread can decrement at a time. Other threads will wait for the
+    /// write lock to be released.
+    fn decrement(&self, key: &str, amount: Option<i64>) -> Result<i64> {
+        // Acquire exclusive write lock
+        let mut data = self.data.write().unwrap();
+        
+        // Default decrement amount is 1
+        let decrement_by = amount.unwrap_or(1);
+        
+        // Get the current value or initialize to 0
+        let current_value = match data.get(key) {
+            Some(value) => {
+                // Try to parse the current value as a number
+                value.parse::<i64>().map_err(|_| {
+                    anyhow::anyhow!("Value for key '{}' is not a valid number", key)
+                })?
+            }
+            None => 0, // Key doesn't exist, start from 0
+        };
+        
+        // Calculate the new value
+        let new_value = current_value - decrement_by;
+        
+        // Store the new value
+        data.insert(key.to_string(), new_value.to_string());
+        
+        Ok(new_value)
+    }
+    
+    /// Append a value to an existing string.
+    ///
+    /// This method acquires an **exclusive write lock** to ensure thread safety.
+    /// If the key doesn't exist, an error is returned.
+    ///
+    /// # Arguments
+    /// * `key` - The key to append to
+    /// * `value` - The value to append
+    ///
+    /// # Returns
+    /// * `Result<String>` - The new value after appending, or error if key doesn't exist
+    ///
+    /// # Thread Safety
+    /// Only one thread can append at a time. Other threads will wait for the
+    /// write lock to be released.
+    fn append(&self, key: &str, value: &str) -> Result<String> {
+        // Acquire exclusive write lock
+        let mut data = self.data.write().unwrap();
+        
+        // Check if the key exists
+        if let Some(current_value) = data.get(key) {
+            // Append the new value
+            let new_value = format!("{}{}", current_value, value);
+            
+            // Store the new value
+            data.insert(key.to_string(), new_value.clone());
+            
+            Ok(new_value)
+        } else {
+            Err(anyhow::anyhow!("Key '{}' not found", key))
+        }
+    }
+    
+    /// Prepend a value to an existing string.
+    ///
+    /// This method acquires an **exclusive write lock** to ensure thread safety.
+    /// If the key doesn't exist, an error is returned.
+    ///
+    /// # Arguments
+    /// * `key` - The key to prepend to
+    /// * `value` - The value to prepend
+    ///
+    /// # Returns
+    /// * `Result<String>` - The new value after prepending, or error if key doesn't exist
+    ///
+    /// # Thread Safety
+    /// Only one thread can prepend at a time. Other threads will wait for the
+    /// write lock to be released.
+    fn prepend(&self, key: &str, value: &str) -> Result<String> {
+        // Acquire exclusive write lock
+        let mut data = self.data.write().unwrap();
+        
+        // Check if the key exists
+        if let Some(current_value) = data.get(key) {
+            // Prepend the new value
+            let new_value = format!("{}{}", value, current_value);
+            
+            // Store the new value
+            data.insert(key.to_string(), new_value.clone());
+            
+            Ok(new_value)
+        } else {
+            Err(anyhow::anyhow!("Key '{}' not found", key))
+        }
+    }
+    
+    /// Clear all keys/values in the store.
+    ///
+    /// This method acquires an **exclusive write lock** to ensure thread safety.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error
+    ///
+    /// # Thread Safety
+    /// Only one thread can truncate at a time. Other threads will wait for the
+    /// write lock to be released.
+    fn truncate(&self) -> Result<()> {
+        // Acquire exclusive write lock
+        let mut data = self.data.write().unwrap();
+        
+        // Clear all entries
+        data.clear();
+        
+        Ok(())
+    }
+    
+    /// Get the number of key-value pairs in the store.
+    ///
+    /// # Returns
+    /// * `Result<u64>` - Number of key-value pairs or error
+    ///
+    /// # Thread Safety
+    /// Multiple threads can call this method concurrently without issues.
+    fn count_keys(&self) -> Result<u64> {
+        let data = self.data.read().unwrap();
+        Ok(data.len() as u64)
+    }
 }
 
 #[cfg(test)]

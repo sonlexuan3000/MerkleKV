@@ -16,6 +16,10 @@ use anyhow::Result;
 ///
 /// This trait defines the core operations that any storage engine must implement.
 /// All engines should be safe to share across multiple threads (Send + Sync).
+/// 
+/// The trait includes basic operations (get, set, delete), numeric operations
+/// (increment, decrement), string operations (append, prepend), and bulk operations
+/// (truncate, count_keys).
 pub trait KVEngineStoreTrait: Send + Sync {
     /// Retrieve a value by its key.
     ///
@@ -62,4 +66,56 @@ pub trait KVEngineStoreTrait: Send + Sync {
     /// # Returns
     /// * `bool` - True if the store is empty, false otherwise
     fn is_empty(&self) -> bool;
+    
+    /// Increment a numeric value.
+    ///
+    /// # Arguments
+    /// * `key` - The key to increment
+    /// * `amount` - The amount to increment by (default: 1)
+    ///
+    /// # Returns
+    /// * `Result<i64>` - The new value after incrementing, or error if not a valid number
+    fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64>;
+    
+    /// Decrement a numeric value.
+    ///
+    /// # Arguments
+    /// * `key` - The key to decrement
+    /// * `amount` - The amount to decrement by (default: 1)
+    ///
+    /// # Returns
+    /// * `Result<i64>` - The new value after decrementing, or error if not a valid number
+    fn decrement(&self, key: &str, amount: Option<i64>) -> Result<i64>;
+    
+    /// Append a value to an existing string.
+    ///
+    /// # Arguments
+    /// * `key` - The key to append to
+    /// * `value` - The value to append
+    ///
+    /// # Returns
+    /// * `Result<String>` - The new value after appending, or error if key doesn't exist
+    fn append(&self, key: &str, value: &str) -> Result<String>;
+    
+    /// Prepend a value to an existing string.
+    ///
+    /// # Arguments
+    /// * `key` - The key to prepend to
+    /// * `value` - The value to prepend
+    ///
+    /// # Returns
+    /// * `Result<String>` - The new value after prepending, or error if key doesn't exist
+    fn prepend(&self, key: &str, value: &str) -> Result<String>;
+    
+    /// Clear all keys/values in the store.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error
+    fn truncate(&self) -> Result<()>;
+    
+    /// Get the number of key-value pairs in the store.
+    ///
+    /// # Returns
+    /// * `Result<u64>` - Number of key-value pairs or error
+    fn count_keys(&self) -> Result<u64>;
 }

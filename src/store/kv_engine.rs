@@ -408,6 +408,152 @@ impl KVEngineStoreTrait for KvEngine {
     fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
+    
+    /// Increment a numeric value.
+    ///
+    /// # Arguments
+    /// * `key` - The key to increment
+    /// * `amount` - The amount to increment by (default: 1)
+    ///
+    /// # Returns
+    /// * `Result<i64>` - The new value after incrementing, or error if not a valid number
+    fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64> {
+        // This is unsafe for concurrent access!
+        let mut new_data = HashMap::clone(&self.data);
+        
+        // Default increment amount is 1
+        let increment_by = amount.unwrap_or(1);
+        
+        // Get the current value or initialize to 0
+        let current_value = match new_data.get(key) {
+            Some(value) => {
+                // Try to parse the current value as a number
+                value.parse::<i64>().map_err(|_| {
+                    anyhow::anyhow!("Value for key '{}' is not a valid number", key)
+                })?
+            }
+            None => 0, // Key doesn't exist, start from 0
+        };
+        
+        // Calculate the new value
+        let new_value = current_value + increment_by;
+        
+        // Store the new value
+        new_data.insert(key.to_string(), new_value.to_string());
+        
+        unsafe {
+            let arc_ptr = Arc::into_raw(self.data.clone());
+            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+            *mutex_ptr = new_data;
+            let _ = Arc::from_raw(arc_ptr);
+        }
+        
+        Ok(new_value)
+    }
+    
+    /// Decrement a numeric value.
+    ///
+    /// # Arguments
+    /// * `key` - The key to decrement
+    /// * `amount` - The amount to decrement by (default: 1)
+    ///
+    /// # Returns
+    /// * `Result<i64>` - The new value after decrementing, or error if not a valid number
+    fn decrement(&self, key: &str, amount: Option<i64>) -> Result<i64> {
+        // Decrement is just a negative increment
+        let decrement_by = amount.unwrap_or(1);
+        self.increment(key, Some(-decrement_by))
+    }
+    
+    /// Append a value to an existing string.
+    ///
+    /// # Arguments
+    /// * `key` - The key to append to
+    /// * `value` - The value to append
+    ///
+    /// # Returns
+    /// * `Result<String>` - The new value after appending, or error if key doesn't exist
+    fn append(&self, key: &str, value: &str) -> Result<String> {
+        // This is unsafe for concurrent access!
+        let mut new_data = HashMap::clone(&self.data);
+        
+        // Check if the key exists
+        if let Some(current_value) = new_data.get(key) {
+            // Append the new value
+            let new_value = format!("{}{}", current_value, value);
+            
+            // Store the new value
+            new_data.insert(key.to_string(), new_value.clone());
+            
+            unsafe {
+                let arc_ptr = Arc::into_raw(self.data.clone());
+                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+                *mutex_ptr = new_data;
+                let _ = Arc::from_raw(arc_ptr);
+            }
+            
+            Ok(new_value)
+        } else {
+            Err(anyhow::anyhow!("Key '{}' not found", key))
+        }
+    }
+    
+    /// Prepend a value to an existing string.
+    ///
+    /// # Arguments
+    /// * `key` - The key to prepend to
+    /// * `value` - The value to prepend
+    ///
+    /// # Returns
+    /// * `Result<String>` - The new value after prepending, or error if key doesn't exist
+    fn prepend(&self, key: &str, value: &str) -> Result<String> {
+        // This is unsafe for concurrent access!
+        let mut new_data = HashMap::clone(&self.data);
+        
+        // Check if the key exists
+        if let Some(current_value) = new_data.get(key) {
+            // Prepend the new value
+            let new_value = format!("{}{}", value, current_value);
+            
+            // Store the new value
+            new_data.insert(key.to_string(), new_value.clone());
+            
+            unsafe {
+                let arc_ptr = Arc::into_raw(self.data.clone());
+                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+                *mutex_ptr = new_data;
+                let _ = Arc::from_raw(arc_ptr);
+            }
+            
+            Ok(new_value)
+        } else {
+            Err(anyhow::anyhow!("Key '{}' not found", key))
+        }
+    }
+    
+    /// Clear all keys/values in the store.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error
+    fn truncate(&self) -> Result<()> {
+        // This is unsafe for concurrent access!
+        unsafe {
+            let arc_ptr = Arc::into_raw(self.data.clone());
+            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+            *mutex_ptr = HashMap::new();
+            let _ = Arc::from_raw(arc_ptr);
+        }
+        
+        Ok(())
+    }
+    
+    /// Get the number of key-value pairs in the store.
+    ///
+    /// # Returns
+    /// * `Result<u64>` - Number of key-value pairs or error
+    fn count_keys(&self) -> Result<u64> {
+        Ok(self.data.len() as u64)
+    }
 }
 
 #[cfg(test)]
