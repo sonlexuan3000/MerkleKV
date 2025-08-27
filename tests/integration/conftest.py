@@ -51,6 +51,7 @@ class MerkleKVServer:
 host = "{self.host}"
 port = {self.port}
 storage_path = "{temp_dir / self.storage_path}"
+engine = "rwlock"
 sync_interval_seconds = 60
 
 [replication]

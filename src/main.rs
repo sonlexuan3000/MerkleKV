@@ -34,16 +34,29 @@ mod server; // TCP server for client connections
 mod store; // Storage engine and Merkle tree
 mod sync; // Anti-entropy synchronization (stub)
 
+// Import storage engines
+use crate::store::{KVEngineStoreTrait, KvEngine, RwLockEngine};
+
 /// Main entry point for the MerkleKV server.
 ///
 /// This function:
 /// 1. Initializes logging using env_logger
 /// 2. Loads configuration from config.toml
 /// 3. Creates a multi-threaded Tokio runtime
-/// 4. Initializes the storage engine
+/// 4. Initializes the storage engine (configurable via config file or command line)
 /// 5. Starts the TCP server to handle client connections
 ///
 /// The server runs indefinitely until terminated by the user.
+///
+/// # Configuration Priority
+/// 1. Command line arguments (highest priority)
+/// 2. Configuration file (config.toml)
+/// 3. Default values (lowest priority)
+///
+/// # Command Line Arguments
+/// * `--config <path>` - Path to configuration file (default: config.toml)
+/// * `--engine <type>` - Storage engine type: "rwlock" or "kv" (overrides config file)
+/// * `--storage-path <path>` - Storage path (overrides config file)
 fn main() -> Result<()> {
     // Initialize logging - use RUST_LOG environment variable to control verbosity
     // Example: RUST_LOG=info cargo run
@@ -51,13 +64,54 @@ fn main() -> Result<()> {
 
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    let config_path = if args.len() > 2 && args[1] == "--config" {
-        PathBuf::from(&args[2])
-    } else {
-        PathBuf::from("config.toml")
-    };
+    let mut config_path = PathBuf::from("config.toml");
+    let mut engine_type = None;
+    let mut storage_path = None;
 
-    let config = config::Config::load(&config_path)?;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--config" => {
+                if i + 1 < args.len() {
+                    config_path = PathBuf::from(&args[i + 1]);
+                    i += 2;
+                } else {
+                    eprintln!("Error: --config requires a path argument");
+                    std::process::exit(1);
+                }
+            }
+            "--engine" => {
+                if i + 1 < args.len() {
+                    engine_type = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --engine requires a type argument");
+                    std::process::exit(1);
+                }
+            }
+            "--storage-path" => {
+                if i + 1 < args.len() {
+                    storage_path = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --storage-path requires a path argument");
+                    std::process::exit(1);
+                }
+            }
+            _ => i += 1,
+        }
+    }
+
+    // Load configuration from file
+    let mut config = config::Config::load(&config_path)?;
+
+    // Override with command line arguments if provided
+    if let Some(engine) = engine_type {
+        config.engine = engine;
+    }
+    if let Some(path) = storage_path {
+        config.storage_path = path;
+    }
 
     // Create a multi-threaded async runtime for handling concurrent connections
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -66,8 +120,24 @@ fn main() -> Result<()> {
 
     // Start the server in the async runtime
     runtime.block_on(async {
-        // Initialize the storage engine (currently in-memory)
-        let store = store::kv_engine::KvEngine::new(&config.storage_path)?;
+        // Initialize the storage engine based on configuration
+        let store: Box<dyn KVEngineStoreTrait + Send + Sync> = match config.engine.as_str() {
+            "rwlock" => {
+                println!("Using thread-safe RwLockEngine");
+                Box::new(RwLockEngine::new(&config.storage_path)?)
+            }
+            "kv" => {
+                println!("⚠️  WARNING: Using non-thread-safe KvEngine!");
+                println!("   This engine is NOT safe for concurrent access.");
+                println!("   Only use this for single-threaded applications or testing.");
+                Box::new(KvEngine::new(&config.storage_path)?)
+            }
+            _ => {
+                eprintln!("Error: Unknown engine type '{}'", config.engine);
+                eprintln!("Available engines: rwlock, kv");
+                std::process::exit(1);
+            }
+        };
 
         // Create and start the TCP server
         let server = server::Server::new(config.clone(), store);
