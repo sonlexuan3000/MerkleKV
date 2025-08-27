@@ -241,11 +241,6 @@ mod tests {
     t1.insert("k", "v");
 
     // leaf_hash must hash the same encoding as the implementation (length-prefix)
-    fn leaf_hash(key: &str, value: &str) -> Vec<u8> {
-        let mut hasher = Sha256::new();
-        hasher.update(super::encode_leaf(key, value));
-        hasher.finalize().to_vec()
-    }
 
     let expected = leaf_hash("k", "v");
     let got = t1.get_root_hash().expect("single-leaf tree must have a root");
