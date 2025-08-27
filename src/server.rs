@@ -212,16 +212,11 @@ pub struct Server {
     /// Server configuration including bind address and port
     config: Config,
 
-    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     /// The storage engine that will be shared across all client connections
     store: Box<dyn KVEngineStoreTrait + Send + Sync>,
     
     /// Server statistics for monitoring and diagnostics
     stats: ServerStats,
-=======
-    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 }
 
 impl Server {
@@ -231,9 +226,6 @@ impl Server {
     /// * `config` - Server configuration (address, port, etc.)
     /// * `store` - Storage engine instance to use for all operations
     ///
-    pub fn new(config: Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
-        Self { config, store }
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     /// # Returns
     /// * `Server` - New server instance ready to run
     pub fn new(config: Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
@@ -242,10 +234,6 @@ impl Server {
             store,
             stats: ServerStats::new(),
         }
-=======
-    pub fn new(config: Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
-        Self { config, store }
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     }
 
     /// Start the server and begin accepting connections.
@@ -274,16 +262,11 @@ impl Server {
         let listener = TcpListener::bind(&addr).await?;
         info!("Server listening on {}", addr);
 
-        let store = Arc::new(Mutex::new(self.store));
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
         // Wrap the storage in `Arc<Mutex<>>` for safe concurrent access
         let store = Arc::new(Mutex::new(self.store));
         
         // Share server statistics across all connections
         let stats = Arc::new(self.stats.clone());
-=======
-        let store = Arc::new(Mutex::new(self.store));
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 
         // TODO: Add graceful shutdown handling
         // TODO: Add connection limits and rate limiting
@@ -291,14 +274,6 @@ impl Server {
         loop {
             match listener.accept().await {
                 Ok((socket, addr)) => {
-
-                    // Clone the Arc for this connection
-                    let store_clone = store.clone();
-
-                    // Spawn a new task to handle this connection
-                    tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(socket, addr, store_clone).await {
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
                     info!("Accepted connection from {}", addr);
                     
                     // Clone the Arc for this connection
@@ -312,15 +287,6 @@ impl Server {
                     // Spawn a new task for each client connection
                     tokio::spawn(async move {
                         if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone()).await {
-=======
-
-                    // Clone the Arc for this connection
-                    let store_clone = store.clone();
-
-                    // Spawn a new task to handle this connection
-                    tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(socket, addr, store_clone).await {
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
                             error!("Error handling connection from {}: {}", addr, e);
                         }
                         
@@ -335,26 +301,6 @@ impl Server {
         }
     }
 
-    /// Handle a single client connection.
-    ///
-    /// This method processes commands from a single client until the connection
-    /// is closed or an error occurs.
-    ///
-    /// # Arguments
-    /// * `socket` - The TCP socket for the client connection
-    /// * `addr` - Client address for logging purposes
-    /// * `store` - Shared storage engine wrapped in Arc<Mutex<>>
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success if connection handled cleanly, error otherwise
-    async fn handle_connection(
-        mut socket: TcpStream,
-        addr: SocketAddr,
-        store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
-    ) -> Result<()> {
-        let mut buffer = [0; 1024];
-        let mut protocol = Protocol::new();
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     /// Handle a single client connection.
     ///
     /// This method processes commands from a client connection until the client
@@ -388,27 +334,6 @@ impl Server {
     ) -> Result<()> {
         let mut buffer = [0; 1024];
         let protocol = Protocol::new();
-=======
-    /// Handle a single client connection.
-    ///
-    /// This method processes commands from a single client until the connection
-    /// is closed or an error occurs.
-    ///
-    /// # Arguments
-    /// * `socket` - The TCP socket for the client connection
-    /// * `addr` - Client address for logging purposes
-    /// * `store` - Shared storage engine wrapped in Arc<Mutex<>>
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success if connection handled cleanly, error otherwise
-    async fn handle_connection(
-        mut socket: TcpStream,
-        addr: SocketAddr,
-        store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
-    ) -> Result<()> {
-        let mut buffer = [0; 1024];
-        let mut protocol = Protocol::new();
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 
         loop {
             // Read data from the client
@@ -425,37 +350,6 @@ impl Server {
                 }
             };
 
-        Ok(())
-    }
-
-    /// Execute a command against the storage engine.
-    ///
-    /// This method takes a parsed command and executes it against the provided
-    /// storage engine, returning the appropriate response string.
-    ///
-    /// # Arguments
-    /// * `command` - The parsed command to execute
-    /// * `store` - Reference to the storage engine
-    ///
-    /// # Returns
-    /// * `String` - The response to send back to the client
-    fn execute_command(command: &Command, store: &dyn KVEngineStoreTrait) -> String {
-        match command {
-            Command::Get { key } => match store.get(key) {
-                Some(value) => format!("VALUE {}\r\n", value),
-                None => "NOT_FOUND\r\n".to_string(),
-            },
-            Command::Set { key, value } => match store.set(key.clone(), value.clone()) {
-                Ok(_) => "OK\r\n".to_string(),
-                Err(e) => format!("ERROR {}\r\n", e),
-            },
-            Command::Delete { key } => {
-                store.delete(key); // Always return OK, regardless of whether key existed
-                "OK\r\n".to_string()
-            }
-        }
-    }
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
             // Convert received bytes to string
             let request = std::str::from_utf8(&buffer[..n])?;
             
@@ -592,36 +486,5 @@ impl Server {
         }
 
         Ok(())
-=======
-        Ok(())
     }
-
-    /// Execute a command against the storage engine.
-    ///
-    /// This method takes a parsed command and executes it against the provided
-    /// storage engine, returning the appropriate response string.
-    ///
-    /// # Arguments
-    /// * `command` - The parsed command to execute
-    /// * `store` - Reference to the storage engine
-    ///
-    /// # Returns
-    /// * `String` - The response to send back to the client
-    fn execute_command(command: &Command, store: &dyn KVEngineStoreTrait) -> String {
-        match command {
-            Command::Get { key } => match store.get(key) {
-                Some(value) => format!("VALUE {}\r\n", value),
-                None => "NOT_FOUND\r\n".to_string(),
-            },
-            Command::Set { key, value } => match store.set(key.clone(), value.clone()) {
-                Ok(_) => "OK\r\n".to_string(),
-                Err(e) => format!("ERROR {}\r\n", e),
-            },
-            Command::Delete { key } => {
-                store.delete(key); // Always return OK, regardless of whether key existed
-                "OK\r\n".to_string()
-            }
-        }
-    }
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 }

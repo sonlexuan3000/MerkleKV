@@ -177,20 +177,8 @@ impl Protocol {
     pub fn parse(&self, input: &str) -> Result<Command> {
         let input = input.trim();
         
-<<<<<<< HEAD
         // Check for empty input
         if input.is_empty() {
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
-            return Err(anyhow!("Empty command"));
-        }
-        // Check for empty input
-        if input.is_empty() {
-            return Err(anyhow!("Empty command"));
-        }
-=======
-        // Check for empty input
-        if input.is_empty() {
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
             return Err(anyhow!("Empty command"));
         }
         
@@ -246,22 +234,10 @@ impl Protocol {
                     return Err(anyhow!("SET command key cannot be empty"));
                 }
                 
-<<<<<<< HEAD
                 Ok(Command::Set {
                     key: key.to_string(),
                     value: value.to_string(),
                 })
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
-                Ok(Command::Set {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                })
-=======
-                Ok(Command::Set {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                })
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
             }
             // Support both "DEL" and "DELETE" for convenience
             "DEL" | "DELETE" => {
@@ -275,9 +251,6 @@ impl Protocol {
                     key: rest.to_string(),
                 })
             }
-<<<<<<< HEAD
-            _ => Err(anyhow!("Unknown command: {}", command)),
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
             "INC" => {
                 if rest.is_empty() {
                     return Err(anyhow!("INC command requires a key"));
@@ -431,9 +404,6 @@ impl Protocol {
                 Ok(Command::Ping)
             }
             _ => Err(anyhow!("Unknown command: {}", command)),
-=======
-            _ => Err(anyhow!("Unknown command: {}", command)),
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
         }
     }
 }
@@ -664,18 +634,6 @@ mod tests {
         assert!(protocol.parse("SET key").is_err()); // Missing value for SET
         assert!(protocol.parse("DELETE").is_err()); // Missing key for DELETE
         
-
-        // Test extra arguments validation
-        assert!(protocol.parse("GET key extra_arg").is_err()); // Too many args for GET
-        assert!(protocol.parse("DELETE key extra_arg").is_err()); // Too many args for DELETE
-        assert!(protocol.parse("DEL key extra_arg").is_err()); // Too many args for DEL
-        // Note: SET can have spaces in values, so "SET key value extra_arg" is valid
-        
-        // Test invalid characters
-        assert!(protocol.parse("GET\tkey").is_err()); // Tab character
-        assert!(protocol.parse("GET\nkey").is_err()); // Newline character
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
-        
         // Test numeric operation errors
         assert!(protocol.parse("INC").is_err()); // Missing key for INC
         assert!(protocol.parse("DEC").is_err()); // Missing key for DEC
@@ -702,17 +660,5 @@ mod tests {
         // Test invalid characters
         assert!(protocol.parse("GET\tkey").is_err()); // Tab character
         assert!(protocol.parse("GET\nkey").is_err()); // Newline character
-=======
-
-        // Test extra arguments validation
-        assert!(protocol.parse("GET key extra_arg").is_err()); // Too many args for GET
-        assert!(protocol.parse("DELETE key extra_arg").is_err()); // Too many args for DELETE
-        assert!(protocol.parse("DEL key extra_arg").is_err()); // Too many args for DEL
-        // Note: SET can have spaces in values, so "SET key value extra_arg" is valid
-        
-        // Test invalid characters
-        assert!(protocol.parse("GET\tkey").is_err()); // Tab character
-        assert!(protocol.parse("GET\nkey").is_err()); // Newline character
->>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     }
 }
