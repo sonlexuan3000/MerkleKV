@@ -204,11 +204,6 @@ impl MerkleTree {
     }
 }
 
-
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
