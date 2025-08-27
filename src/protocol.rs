@@ -4,9 +4,9 @@
 //! The protocol supports three basic operations: GET, SET, and DELETE.
 //!
 //! ## Protocol Format
-//! 
+//!
 //! Commands are text-based and terminated with line endings:
-//! 
+//!
 //! - `GET <key>` - Retrieve a value by key
 //! - `SET <key> <value>` - Store a key-value pair  
 //! - `DEL <key>` or `DELETE <key>` - Delete a key
@@ -25,39 +25,39 @@
 use anyhow::{anyhow, Result};
 
 /// Represents the different commands that clients can send to the server.
-/// 
+///
 /// Each command variant contains the necessary data to execute the operation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     /// Retrieve a value by its key
-    Get { 
+    Get {
         /// The key to look up
-        key: String 
+        key: String,
     },
-    
+
     /// Store a key-value pair
-    Set { 
+    Set {
         /// The key to store
-        key: String, 
+        key: String,
         /// The value to associate with the key
-        value: String 
+        value: String,
     },
-    
+
     /// Delete a key-value pair
-    Delete { 
+    Delete {
         /// The key to delete
-        key: String 
+        key: String,
     },
 }
 
 /// Protocol parser that converts text commands into structured Command enums.
-/// 
+///
 /// This parser is stateless and can be safely shared across threads.
 pub struct Protocol;
 
 impl Protocol {
     /// Create a new protocol parser instance.
-    /// 
+    ///
     /// # Returns
     /// * `Protocol` - A new parser instance
     pub fn new() -> Self {
@@ -65,22 +65,22 @@ impl Protocol {
     }
 
     /// Parse a text command into a structured Command enum.
-    /// 
+    ///
     /// The parser is case-insensitive for command names and handles both
     /// "DEL" and "DELETE" for deletion operations.
-    /// 
+    ///
     /// # Arguments
     /// * `input` - The text command to parse (e.g., "GET mykey")
-    /// 
+    ///
     /// # Returns
     /// * `Result<Command>` - Parsed command or error if invalid syntax
-    /// 
+    ///
     /// # Errors
     /// Returns an error if:
     /// - The input is empty
     /// - The command is not recognized
     /// - Required arguments are missing
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let protocol = Protocol::new();
@@ -105,6 +105,9 @@ impl Protocol {
                 if parts.len() < 2 {
                     return Err(anyhow!("GET command requires a key"));
                 }
+                if parts[1].is_empty() {
+                    return Err(anyhow!("GET command key cannot be empty"));
+                }
                 Ok(Command::Get {
                     key: parts[1].to_string(),
                 })
@@ -112,6 +115,9 @@ impl Protocol {
             "SET" => {
                 if parts.len() < 3 {
                     return Err(anyhow!("SET command requires a key and value"));
+                }
+                if parts[1].is_empty() {
+                    return Err(anyhow!("SET command key cannot be empty"));
                 }
                 Ok(Command::Set {
                     key: parts[1].to_string(),
@@ -122,6 +128,9 @@ impl Protocol {
             "DEL" | "DELETE" => {
                 if parts.len() < 2 {
                     return Err(anyhow!("DELETE command requires a key"));
+                }
+                if parts[1].is_empty() {
+                    return Err(anyhow!("DELETE command key cannot be empty"));
                 }
                 Ok(Command::Delete {
                     key: parts[1].to_string(),
@@ -140,7 +149,12 @@ mod tests {
     fn test_parse_get() {
         let protocol = Protocol::new();
         let result = protocol.parse("GET test_key").unwrap();
-        assert_eq!(result, Command::Get { key: "test_key".to_string() });
+        assert_eq!(
+            result,
+            Command::Get {
+                key: "test_key".to_string()
+            }
+        );
     }
 
     #[test]
@@ -160,18 +174,28 @@ mod tests {
     fn test_parse_delete() {
         let protocol = Protocol::new();
         let result = protocol.parse("DELETE test_key").unwrap();
-        assert_eq!(result, Command::Delete { key: "test_key".to_string() });
+        assert_eq!(
+            result,
+            Command::Delete {
+                key: "test_key".to_string()
+            }
+        );
     }
 
     #[test]
     fn test_parse_error() {
         let protocol = Protocol::new();
-        
+
         // Test various error conditions
-        assert!(protocol.parse("").is_err());                    // Empty command
-        assert!(protocol.parse("UNKNOWN_COMMAND").is_err());     // Unknown command
-        assert!(protocol.parse("GET").is_err());                 // Missing key for GET
-        assert!(protocol.parse("SET key").is_err());             // Missing value for SET
-        assert!(protocol.parse("DELETE").is_err());              // Missing key for DELETE
+        assert!(protocol.parse("").is_err()); // Empty command
+        assert!(protocol.parse("UNKNOWN_COMMAND").is_err()); // Unknown command
+        assert!(protocol.parse("GET").is_err()); // Missing key for GET
+        assert!(protocol.parse("SET key").is_err()); // Missing value for SET
+        assert!(protocol.parse("DELETE").is_err()); // Missing key for DELETE
+        
+        // Test empty key validation
+        assert!(protocol.parse("GET ").is_err()); // Empty key for GET
+        assert!(protocol.parse("SET  value").is_err()); // Empty key for SET
+        assert!(protocol.parse("DELETE ").is_err()); // Empty key for DELETE
     }
 }
