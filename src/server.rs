@@ -359,7 +359,7 @@ impl Server {
                     stats.increment_command_counter(&command);
                     
                     // Lock the storage for the duration of this command
-                    let mut store = store.lock().await;
+                    let store = store.lock().await;
                     let response = match command.clone() {
                         Command::Get { key } => {
                             match store.get(&key) {
@@ -424,12 +424,14 @@ impl Server {
                             }
                         }
                         Command::MultiSet { pairs } => {
+                            let mut result = "OK\r\n".to_string();
                             for (key, value) in pairs {
                                 if let Err(e) = store.set(key.clone(), value.clone()) {
-                                    return format!("ERROR {}\r\n", e);
+                                    result = format!("ERROR {}\r\n", e);
+                                    break;
                                 }
                             }
-                            "OK\r\n".to_string()
+                            result
                         }
                         Command::Truncate => {
                             match store.truncate() {

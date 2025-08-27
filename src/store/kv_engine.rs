@@ -646,24 +646,29 @@ mod tests {
         let storage_path = temp_dir.path().to_str().unwrap();
         let mut engine = KvEngine::new(storage_path).unwrap();
         
-        // Test append to non-existent key
-        let result = engine.append("greeting", "World!");
-        assert_eq!(result, "World!");
-        assert_eq!(engine.get("greeting"), Some("World!".to_string()));
+        // Set up a key for testing
+        engine.set("greeting".to_string(), "World!".to_string());
         
         // Test append to existing key
-        let result = engine.append("greeting", " Hello!");
+        let result = engine.append("greeting", " Hello!").unwrap();
         assert_eq!(result, "World! Hello!");
         assert_eq!(engine.get("greeting"), Some("World! Hello!".to_string()));
         
         // Test prepend to existing key
-        let result = engine.prepend("greeting", "Hey! ");
+        let result = engine.prepend("greeting", "Hey! ").unwrap();
         assert_eq!(result, "Hey! World! Hello!");
         assert_eq!(engine.get("greeting"), Some("Hey! World! Hello!".to_string()));
         
-        // Test prepend to non-existent key
-        let result = engine.prepend("new_key", "Start: ");
-        assert_eq!(result, "Start: ");
+        // Test append to non-existent key (should error)
+        let result = engine.append("nonexistent", "value");
+        assert!(result.is_err());
+        
+        // Test prepend to non-existent key (should error)
+        let result = engine.prepend("another_nonexistent", "value");
+        assert!(result.is_err());
+        
+        // Set up a new key for testing
+        engine.set("new_key".to_string(), "Start: ".to_string());
         assert_eq!(engine.get("new_key"), Some("Start: ".to_string()));
     }
     
