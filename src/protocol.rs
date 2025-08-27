@@ -80,6 +80,7 @@ impl Protocol {
     /// - The input is empty
     /// - The command is not recognized
     /// - Required arguments are missing
+    /// - Too many arguments are provided
     ///
     /// # Example
     /// ```rust
@@ -92,51 +93,80 @@ impl Protocol {
     /// ```
     pub fn parse(&self, input: &str) -> Result<Command> {
         let input = input.trim();
-        // Split into at most 3 parts: command, key, and value (for SET operations)
-        let parts: Vec<&str> = input.splitn(3, ' ').collect();
-
-        if parts.is_empty() {
+        
+        // Check for empty input
+        if input.is_empty() {
             return Err(anyhow!("Empty command"));
         }
 
+        // Check for invalid characters (tabs, newlines within the command)
+        if input.contains('\t') {
+            return Err(anyhow!("Invalid character: tab character not allowed"));
+        }
+        if input.contains('\n') && input.trim() != input.trim_end_matches('\n') {
+            return Err(anyhow!("Invalid character: newline character not allowed"));
+        }
+
+        // Split command into parts - for SET we need to split into exactly 3 parts
+        // to allow spaces in values. For GET/DELETE, we can split normally.
+        let first_space = input.find(' ');
+        
+        if first_space.is_none() {
+            // Single word command
+            match input.to_uppercase().as_str() {
+                "GET" | "SET" | "DELETE" | "DEL" => {
+                    return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
+                }
+                _ => return Err(anyhow!("Unknown command: {}", input)),
+            }
+        }
+
+        let command = &input[..first_space.unwrap()];
+        let rest = &input[first_space.unwrap() + 1..];
+
         // Parse command based on the first word (case-insensitive)
-        match parts[0].to_uppercase().as_str() {
+        match command.to_uppercase().as_str() {
             "GET" => {
-                if parts.len() < 2 {
+                if rest.is_empty() {
                     return Err(anyhow!("GET command requires a key"));
                 }
-                if parts[1].is_empty() {
-                    return Err(anyhow!("GET command key cannot be empty"));
+                if rest.contains(' ') {
+                    return Err(anyhow!("GET command accepts only one argument"));
                 }
                 Ok(Command::Get {
-                    key: parts[1].to_string(),
+                    key: rest.to_string(),
                 })
             }
             "SET" => {
-                if parts.len() < 3 {
+                let second_space = rest.find(' ');
+                if second_space.is_none() {
                     return Err(anyhow!("SET command requires a key and value"));
                 }
-                if parts[1].is_empty() {
+                let key = &rest[..second_space.unwrap()];
+                let value = &rest[second_space.unwrap() + 1..];
+                
+                if key.is_empty() {
                     return Err(anyhow!("SET command key cannot be empty"));
                 }
+                
                 Ok(Command::Set {
-                    key: parts[1].to_string(),
-                    value: parts[2].to_string(),
+                    key: key.to_string(),
+                    value: value.to_string(),
                 })
             }
             // Support both "DEL" and "DELETE" for convenience
             "DEL" | "DELETE" => {
-                if parts.len() < 2 {
+                if rest.is_empty() {
                     return Err(anyhow!("DELETE command requires a key"));
                 }
-                if parts[1].is_empty() {
-                    return Err(anyhow!("DELETE command key cannot be empty"));
+                if rest.contains(' ') {
+                    return Err(anyhow!("DELETE command accepts only one argument"));
                 }
                 Ok(Command::Delete {
-                    key: parts[1].to_string(),
+                    key: rest.to_string(),
                 })
             }
-            _ => Err(anyhow!("Unknown command: {}", parts[0])),
+            _ => Err(anyhow!("Unknown command: {}", command)),
         }
     }
 }
@@ -168,6 +198,16 @@ mod tests {
                 value: "test_value".to_string()
             }
         );
+        
+        // Test SET with value containing spaces
+        let result = protocol.parse("SET key value with spaces").unwrap();
+        assert_eq!(
+            result,
+            Command::Set {
+                key: "key".to_string(),
+                value: "value with spaces".to_string()
+            }
+        );
     }
 
     #[test]
@@ -197,5 +237,15 @@ mod tests {
         assert!(protocol.parse("GET ").is_err()); // Empty key for GET
         assert!(protocol.parse("SET  value").is_err()); // Empty key for SET
         assert!(protocol.parse("DELETE ").is_err()); // Empty key for DELETE
+
+        // Test extra arguments validation
+        assert!(protocol.parse("GET key extra_arg").is_err()); // Too many args for GET
+        assert!(protocol.parse("DELETE key extra_arg").is_err()); // Too many args for DELETE
+        assert!(protocol.parse("DEL key extra_arg").is_err()); // Too many args for DEL
+        // Note: SET can have spaces in values, so "SET key value extra_arg" is valid
+        
+        // Test invalid characters
+        assert!(protocol.parse("GET\tkey").is_err()); // Tab character
+        assert!(protocol.parse("GET\nkey").is_err()); // Newline character
     }
 }
