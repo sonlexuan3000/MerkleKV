@@ -42,7 +42,7 @@ impl MerkleTree {
 
     /// Shared helper: compute a leaf hash from (key, value).
     /// Using a shared function guarantees tests and implementation stay in sync.
-    pub(crate) fn compute_leaf_hash(key: &str, value: &str) -> Vec<u8> {
+    fn compute_leaf_hash(key: &str, value: &str) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(encode_leaf(key, value));
         hasher.finalize().to_vec()
