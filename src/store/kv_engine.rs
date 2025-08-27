@@ -9,6 +9,8 @@
 //! - Uses `Arc<HashMap<String, String>>` for thread-safe access
 //! - Creates new HashMap instances on every write (copy-on-write pattern)
 //! - Provides basic get/set/delete operations
+//! - Supports numeric operations (increment/decrement)
+//! - Supports string operations (append/prepend)
 //! - Returns all keys for iteration
 //!
 //! ## Future Implementation Plans
@@ -150,6 +152,162 @@ impl KvEngine {
     pub fn keys(&self) -> Vec<String> {
         self.data.keys().cloned().collect()
     }
+
+    /// Increment a numeric value stored at the given key.
+    /// 
+    /// If the key doesn't exist, it will be created with the increment amount.
+    /// If the key exists but doesn't contain a valid number, an error message is returned.
+    /// 
+    /// # Arguments
+    /// * `key` - The key to increment
+    /// * `amount` - The amount to increment by (defaults to 1 if None)
+    /// 
+    /// # Returns
+    /// * `Result<i64, String>` - The new value after incrementing, or an error message
+    /// 
+    /// # Example
+    /// ```rust
+    /// let mut engine = KvEngine::new("./data")?;
+    /// match engine.increment("counter", Some(5)) {
+    ///     Ok(new_value) => println!("New counter value: {}", new_value),
+    ///     Err(e) => println!("Error: {}", e),
+    /// }
+    /// ```
+    pub fn increment(&mut self, key: &str, amount: Option<i64>) -> Result<i64, String> {
+        let increment_by = amount.unwrap_or(1);
+        let mut new_data = (*self.data).clone();
+        
+        let new_value = match new_data.get(key) {
+            Some(value) => {
+                // Try to parse the existing value as a number
+                match value.parse::<i64>() {
+                    Ok(num) => num + increment_by,
+                    Err(_) => return Err(format!("Value for key '{}' is not a valid number", key)),
+                }
+            }
+            None => increment_by, // Key doesn't exist, start with the increment amount
+        };
+        
+        // Store the new value
+        new_data.insert(key.to_string(), new_value.to_string());
+        self.data = Arc::new(new_data);
+        
+        Ok(new_value)
+    }
+
+    /// Decrement a numeric value stored at the given key.
+    /// 
+    /// If the key doesn't exist, it will be created with the negative of the decrement amount.
+    /// If the key exists but doesn't contain a valid number, an error message is returned.
+    /// 
+    /// # Arguments
+    /// * `key` - The key to decrement
+    /// * `amount` - The amount to decrement by (defaults to 1 if None)
+    /// 
+    /// # Returns
+    /// * `Result<i64, String>` - The new value after decrementing, or an error message
+    /// 
+    /// # Example
+    /// ```rust
+    /// let mut engine = KvEngine::new("./data")?;
+    /// match engine.decrement("counter", Some(3)) {
+    ///     Ok(new_value) => println!("New counter value: {}", new_value),
+    ///     Err(e) => println!("Error: {}", e),
+    /// }
+    /// ```
+    pub fn decrement(&mut self, key: &str, amount: Option<i64>) -> Result<i64, String> {
+        let decrement_by = amount.unwrap_or(1);
+        // Decrement is just a negative increment
+        self.increment(key, Some(-decrement_by))
+    }
+
+    /// Append a value to an existing string.
+    /// 
+    /// If the key doesn't exist, it will be created with the value.
+    /// 
+    /// # Arguments
+    /// * `key` - The key to append to
+    /// * `value` - The value to append
+    /// 
+    /// # Returns
+    /// * `String` - The new value after appending
+    /// 
+    /// # Example
+    /// ```rust
+    /// let mut engine = KvEngine::new("./data")?;
+    /// let new_value = engine.append("greeting", " World!");
+    /// println!("New value: {}", new_value); // e.g., "Hello World!"
+    /// ```
+    pub fn append(&mut self, key: &str, value: &str) -> String {
+        let mut new_data = (*self.data).clone();
+        
+        let new_value = match new_data.get(key) {
+            Some(existing) => {
+                let mut result = existing.clone();
+                result.push_str(value);
+                result
+            }
+            None => value.to_string(), // Key doesn't exist, use the value as is
+        };
+        
+        // Store the new value
+        new_data.insert(key.to_string(), new_value.clone());
+        self.data = Arc::new(new_data);
+        
+        new_value
+    }
+
+    /// Prepend a value to an existing string.
+    /// 
+    /// If the key doesn't exist, it will be created with the value.
+    /// 
+    /// # Arguments
+    /// * `key` - The key to prepend to
+    /// * `value` - The value to prepend
+    /// 
+    /// # Returns
+    /// * `String` - The new value after prepending
+    /// 
+    /// # Example
+    /// ```rust
+    /// let mut engine = KvEngine::new("./data")?;
+    /// let new_value = engine.prepend("greeting", "Hello, ");
+    /// println!("New value: {}", new_value); // e.g., "Hello, World!"
+    /// ```
+    pub fn prepend(&mut self, key: &str, value: &str) -> String {
+        let mut new_data = (*self.data).clone();
+        
+        let new_value = match new_data.get(key) {
+            Some(existing) => {
+                let mut result = value.to_string();
+                result.push_str(existing);
+                result
+            }
+            None => value.to_string(), // Key doesn't exist, use the value as is
+        };
+        
+        // Store the new value
+        new_data.insert(key.to_string(), new_value.clone());
+        self.data = Arc::new(new_data);
+        
+        new_value
+    }
+
+    /// Clear all keys/values in the store.
+    /// 
+    /// This operation removes all data from the store, effectively resetting it
+    /// to an empty state.
+    /// 
+    /// # Example
+    /// ```rust
+    /// let mut engine = KvEngine::new("./data")?;
+    /// engine.truncate();
+    /// assert_eq!(engine.keys().len(), 0);
+    /// ```
+    pub fn truncate(&mut self) {
+        // Create a new empty HashMap
+        self.data = Arc::new(HashMap::new());
+    }
 }
 
 #[cfg(test)]
@@ -185,5 +343,113 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert!(keys.contains(&"key2".to_string()));
         assert!(keys.contains(&"key3".to_string()));
+    }
+    
+    #[test]
+    fn test_increment_operations() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().to_str().unwrap();
+        let mut engine = KvEngine::new(storage_path).unwrap();
+        
+        // Test incrementing a non-existent key (should create with value 1)
+        let result = engine.increment("counter1", None).unwrap();
+        assert_eq!(result, 1);
+        assert_eq!(engine.get("counter1"), Some("1".to_string()));
+        
+        // Test incrementing with a specific amount
+        let result = engine.increment("counter1", Some(5)).unwrap();
+        assert_eq!(result, 6);
+        assert_eq!(engine.get("counter1"), Some("6".to_string()));
+        
+        // Test incrementing with a negative amount
+        let result = engine.increment("counter1", Some(-2)).unwrap();
+        assert_eq!(result, 4);
+        assert_eq!(engine.get("counter1"), Some("4".to_string()));
+        
+        // Test incrementing a key with non-numeric value
+        engine.set("text".to_string(), "hello".to_string());
+        let result = engine.increment("text", None);
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_decrement_operations() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().to_str().unwrap();
+        let mut engine = KvEngine::new(storage_path).unwrap();
+        
+        // Test decrementing a non-existent key (should create with value -1)
+        let result = engine.decrement("counter1", None).unwrap();
+        assert_eq!(result, -1);
+        assert_eq!(engine.get("counter1"), Some("-1".to_string()));
+        
+        // Test decrementing with a specific amount
+        let result = engine.decrement("counter1", Some(3)).unwrap();
+        assert_eq!(result, -4);
+        assert_eq!(engine.get("counter1"), Some("-4".to_string()));
+        
+        // Test decrementing a key with non-numeric value
+        engine.set("text".to_string(), "hello".to_string());
+        let result = engine.decrement("text", None);
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_string_operations() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().to_str().unwrap();
+        let mut engine = KvEngine::new(storage_path).unwrap();
+        
+        // Test append to non-existent key
+        let result = engine.append("greeting", "World!");
+        assert_eq!(result, "World!");
+        assert_eq!(engine.get("greeting"), Some("World!".to_string()));
+        
+        // Test append to existing key
+        let result = engine.append("greeting", " Hello!");
+        assert_eq!(result, "World! Hello!");
+        assert_eq!(engine.get("greeting"), Some("World! Hello!".to_string()));
+        
+        // Test prepend to existing key
+        let result = engine.prepend("greeting", "Hey! ");
+        assert_eq!(result, "Hey! World! Hello!");
+        assert_eq!(engine.get("greeting"), Some("Hey! World! Hello!".to_string()));
+        
+        // Test prepend to non-existent key
+        let result = engine.prepend("new_key", "Start: ");
+        assert_eq!(result, "Start: ");
+        assert_eq!(engine.get("new_key"), Some("Start: ".to_string()));
+    }
+    
+    #[test]
+    fn test_truncate_operation() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().to_str().unwrap();
+        let mut engine = KvEngine::new(storage_path).unwrap();
+        
+        // Add some data
+        engine.set("key1".to_string(), "value1".to_string());
+        engine.set("key2".to_string(), "value2".to_string());
+        engine.set("key3".to_string(), "value3".to_string());
+        
+        // Verify data exists
+        assert_eq!(engine.keys().len(), 3);
+        assert_eq!(engine.get("key1"), Some("value1".to_string()));
+        assert_eq!(engine.get("key2"), Some("value2".to_string()));
+        assert_eq!(engine.get("key3"), Some("value3".to_string()));
+        
+        // Truncate the store
+        engine.truncate();
+        
+        // Verify all data is gone
+        assert_eq!(engine.keys().len(), 0);
+        assert_eq!(engine.get("key1"), None);
+        assert_eq!(engine.get("key2"), None);
+        assert_eq!(engine.get("key3"), None);
+        
+        // Verify we can add new data after truncate
+        engine.set("new_key".to_string(), "new_value".to_string());
+        assert_eq!(engine.keys().len(), 1);
+        assert_eq!(engine.get("new_key"), Some("new_value".to_string()));
     }
 }
