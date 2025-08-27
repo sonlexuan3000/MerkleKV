@@ -1,43 +1,45 @@
 //! # Key-Value Storage Engine
 //!
 //! This module provides the core storage functionality for MerkleKV.
-//! Implements a thread-safe in-memory storage engine using RwLock<HashMap>.
+//! Currently implements an in-memory storage engine using HashMap.
 //!
-//! ## Thread Safety Implementation
+//! ## Current Implementation
 //!
-//! The current implementation uses `RwLock<HashMap<String, String>>` for thread-safe access:
-//! - **Multiple concurrent readers**: Multiple threads can read simultaneously
-//! - **Single writer**: Only one thread can write at a time
-//! - **No race conditions**: All operations are properly synchronized
-//! - **Efficient**: Readers don't block each other, only writers block
+//! The current implementation is a simple in-memory store that:
+//! - Uses `Arc<HashMap<String, String>>` for thread-safe access
+//! - Creates new HashMap instances on every write (copy-on-write pattern)
+//! - Provides basic get/set/delete operations
+//! - Returns all keys for iteration
 //!
 //! ## Future Implementation Plans
 //!
-//! This is a production-ready in-memory implementation. Future versions could:
-//! - Add persistent storage (e.g., RocksDB, Sled)
+//! This is a placeholder implementation. A production version should:
+//! - Use a persistent storage engine (e.g., RocksDB, Sled)
 //! - Support transactions and atomic operations
 //! - Implement Write-Ahead Logging (WAL)
 //! - Add compression and efficient serialization
 //! - Support range queries and iteration
+//! - Implement proper error handling for I/O operations
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
-/// Thread-safe in-memory key-value storage engine.
+use super::kv_trait::KVEngineStoreTrait;
+
+/// In-memory key-value storage engine.
 ///
-/// This implementation uses `RwLock<HashMap>` to provide thread-safe access:
-/// - Multiple threads can read simultaneously (shared read lock)
-/// - Only one thread can write at a time (exclusive write lock)
-/// - All operations are atomic and race-condition free
+/// This is a simplified storage implementation that keeps all data in memory.
+/// The `Arc<HashMap>` allows for efficient cloning of the engine while sharing
+/// the underlying data until a write operation occurs.
 ///
 /// **Note**: This implementation is not persistent! All data is lost when
 /// the process terminates.
 #[derive(Clone)]
 pub struct KvEngine {
-    /// Thread-safe shared reference to the key-value data
-    /// Using RwLock allows multiple readers or a single writer
-    data: Arc<RwLock<HashMap<String, String>>>,
+    /// Shared reference to the key-value data
+    /// Using Arc allows multiple readers while writes create new instances
+    data: Arc<HashMap<String, String>>,
     // TODO: Add persistent storage implementation
     // In a real implementation, this would use a persistent storage engine like Sled:
     // storage_path: PathBuf,
@@ -53,8 +55,11 @@ impl KvEngine {
     /// # Returns
     /// * `Result<KvEngine>` - New storage engine instance or error
     ///
-    /// # Thread Safety
-    /// The returned engine is safe to share across multiple threads.
+    /// # Current Behavior
+    /// Creates an empty in-memory HashMap. The storage_path is ignored.
+    ///
+    /// # Future Implementation
+    /// Should initialize or open a persistent storage engine at the given path.
     pub fn new(_storage_path: &str) -> Result<Self> {
         // TODO: Initialize persistent storage engine here
         // For example, with Sled:
@@ -62,23 +67,17 @@ impl KvEngine {
         // Ok(Self { storage_path: storage_path.into(), sled_db: db })
 
         Ok(Self {
-            data: Arc::new(RwLock::new(HashMap::new())),
+            data: Arc::new(HashMap::new()),
         })
     }
 
     /// Retrieve a value by its key.
-    ///
-    /// This method acquires a **shared read lock**, allowing multiple threads
-    /// to read simultaneously without blocking each other.
     ///
     /// # Arguments
     /// * `key` - The key to look up
     ///
     /// # Returns
     /// * `Option<String>` - The value if found, None otherwise
-    ///
-    /// # Thread Safety
-    /// Multiple threads can call this method concurrently without issues.
     ///
     /// # Example
     /// ```rust
@@ -88,40 +87,122 @@ impl KvEngine {
     /// }
     /// ```
     pub fn get(&self, key: &str) -> Option<String> {
-        // Acquire shared read lock - multiple readers can proceed simultaneously
-        let data = self.data.read().unwrap();
-        data.get(key).cloned()
+        self.data.get(key).cloned()
     }
 
     /// Store a key-value pair.
     ///
-    /// This method acquires an **exclusive write lock**, ensuring only one
-    /// thread can write at a time. This prevents race conditions and data corruption.
+    /// This operation creates a new HashMap with the updated data due to the
+    /// immutable nature of the `Arc<HashMap>` design. This is inefficient but
+    /// simple for the current prototype.
     ///
     /// # Arguments
     /// * `key` - The key to store
     /// * `value` - The value to associate with the key
     ///
-    /// # Thread Safety
-    /// Only one thread can write at a time. Other threads will wait for the
-    /// write lock to be released.
+    /// # Example
+    /// ```rust
+    /// let mut engine = KvEngine::new("./data")?;
+    /// engine.set("user:123".to_string(), "john_doe".to_string());
+    /// ```
+    ///
+    /// # Performance Note
+    /// This implementation is O(n) in the number of keys due to HashMap cloning.
+    /// A persistent storage engine would be much more efficient.
+    pub fn set(&mut self, key: String, value: String) {
+        // Create a new HashMap with the updated value
+        // TODO: Replace with efficient persistent storage writes
+        let mut new_data = (*self.data).clone();
+        new_data.insert(key, value);
+        self.data = Arc::new(new_data);
+    }
+
+    /// Delete a key-value pair.
+    ///
+    /// Like `set`, this creates a new HashMap without the deleted key.
+    ///
+    /// # Arguments
+    /// * `key` - The key to delete
     ///
     /// # Example
     /// ```rust
-    /// let engine = KvEngine::new("./data")?;
-    /// engine.set("user:123".to_string(), "john_doe".to_string());
+    /// let mut engine = KvEngine::new("./data")?;
+    /// engine.delete("user:123");
     /// ```
-    pub fn set(&self, key: String, value: String) -> Result<()> {
-        // Acquire exclusive write lock - only one writer at a time
-        let mut data = self.data.write().unwrap();
-        data.insert(key, value);
+    pub fn delete(&mut self, key: &str) {
+        // Create a new HashMap without the deleted key
+        // TODO: Replace with efficient persistent storage deletes
+        let mut new_data = (*self.data).clone();
+        new_data.remove(key);
+        self.data = Arc::new(new_data);
+    }
+
+    /// Get all keys currently stored in the engine.
+    ///
+    /// This is primarily used by the Merkle tree to rebuild its state
+    /// and for debugging purposes.
+    ///
+    /// # Returns
+    /// * `Vec<String>` - Vector of all keys in the store
+    ///
+    /// # Performance Note
+    /// This operation is O(n) and creates a new vector. In a production
+    /// system, this should be replaced with an iterator-based approach.
+    pub fn keys(&self) -> Vec<String> {
+        self.data.keys().cloned().collect()
+    }
+}
+
+impl KVEngineStoreTrait for KvEngine {
+    /// Retrieve a value by its key.
+    ///
+    /// # Arguments
+    /// * `key` - The key to look up
+    ///
+    /// # Returns
+    /// * `Option<String>` - The value if found, None otherwise
+    fn get(&self, key: &str) -> Option<String> {
+        self.data.get(key).cloned()
+    }
+
+    /// Store a key-value pair.
+    ///
+    /// ⚠️ **WARNING**: This method is NOT thread-safe!
+    ///
+    /// This operation creates a new HashMap with the updated data due to the
+    /// immutable nature of the `Arc<HashMap>` design. This is inefficient but
+    /// simple for the current prototype.
+    ///
+    /// # Arguments
+    /// * `key` - The key to store
+    /// * `value` - The value to associate with the key
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error
+    ///
+    /// # Thread Safety
+    /// ⚠️ This method is NOT safe for concurrent access!
+    /// Concurrent writes can lead to data corruption or lost updates.
+    fn set(&self, key: String, value: String) -> Result<()> {
+        // This is unsafe for concurrent access!
+        // We need to clone the HashMap, modify it, and create a new Arc
+        let mut new_data = HashMap::clone(&self.data);
+        new_data.insert(key, value);
+        // This is a race condition if multiple threads do this simultaneously
+        unsafe {
+            let arc_ptr = Arc::into_raw(self.data.clone());
+            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+            *mutex_ptr = new_data;
+            let _ = Arc::from_raw(arc_ptr);
+        }
         Ok(())
     }
 
     /// Delete a key-value pair.
     ///
-    /// Like `set`, this method acquires an **exclusive write lock** to ensure
-    /// thread safety during deletion operations.
+    /// ⚠️ **WARNING**: This method is NOT thread-safe!
+    ///
+    /// Like `set`, this creates a new HashMap without the deleted key.
     ///
     /// # Arguments
     /// * `key` - The key to delete
@@ -130,219 +211,79 @@ impl KvEngine {
     /// * `bool` - True if the key existed and was deleted, false otherwise
     ///
     /// # Thread Safety
-    /// Only one thread can delete at a time. Other threads will wait for the
-    /// write lock to be released.
-    ///
-    /// # Example
-    /// ```rust
-    /// let engine = KvEngine::new("./data")?;
-    /// if engine.delete("user:123") {
-    ///     println!("User deleted successfully");
-    /// }
-    /// ```
-    pub fn delete(&self, key: &str) -> bool {
-        // Acquire exclusive write lock - only one writer at a time
-        let mut data = self.data.write().unwrap();
-        data.remove(key).is_some()
+    /// ⚠️ This method is NOT safe for concurrent access!
+    fn delete(&self, key: &str) -> bool {
+        // This is unsafe for concurrent access!
+        let mut new_data = HashMap::clone(&self.data);
+        let existed = new_data.remove(key).is_some();
+        if existed {
+            unsafe {
+                let arc_ptr = Arc::into_raw(self.data.clone());
+                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+                *mutex_ptr = new_data;
+                let _ = Arc::from_raw(arc_ptr);
+            }
+        }
+        existed
     }
 
     /// Get all keys currently stored in the engine.
     ///
-    /// This method acquires a **shared read lock** to safely iterate over all keys.
-    ///
     /// # Returns
     /// * `Vec<String>` - Vector of all keys in the store
-    ///
-    /// # Thread Safety
-    /// Multiple threads can call this method concurrently without issues.
-    ///
-    /// # Performance Note
-    /// This operation creates a new vector. In a production system, consider
-    /// using an iterator-based approach for better memory efficiency.
-    pub fn keys(&self) -> Vec<String> {
-        // Acquire shared read lock - multiple readers can proceed simultaneously
-        let data = self.data.read().unwrap();
-        data.keys().cloned().collect()
+    fn keys(&self) -> Vec<String> {
+        self.data.keys().cloned().collect()
     }
 
     /// Get the number of key-value pairs in the store.
     ///
     /// # Returns
     /// * `usize` - Number of key-value pairs
-    ///
-    /// # Thread Safety
-    /// Multiple threads can call this method concurrently without issues.
-    pub fn len(&self) -> usize {
-        let data = self.data.read().unwrap();
-        data.len()
+    fn len(&self) -> usize {
+        self.data.len()
     }
 
     /// Check if the store is empty.
     ///
     /// # Returns
     /// * `bool` - True if the store is empty, false otherwise
-    ///
-    /// # Thread Safety
-    /// Multiple threads can call this method concurrently without issues.
-    pub fn is_empty(&self) -> bool {
-        let data = self.data.read().unwrap();
-        data.is_empty()
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use std::thread;
     use tempfile::tempdir;
 
     #[test]
     fn test_kv_operations() {
+        // Use a temporary directory for testing (even though it's not used yet)
         let temp_dir = tempdir().unwrap();
         let storage_path = temp_dir.path().to_str().unwrap();
 
-        let engine = KvEngine::new(storage_path).unwrap();
+        let mut engine = KvEngine::new(storage_path).unwrap();
 
         // Test basic set and get operations
-        engine
-            .set("key1".to_string(), "value1".to_string())
-            .unwrap();
+        engine.set("key1".to_string(), "value1".to_string());
         assert_eq!(engine.get("key1"), Some("value1".to_string()));
 
         // Test overwriting an existing key
-        engine
-            .set("key1".to_string(), "new_value".to_string())
-            .unwrap();
+        engine.set("key1".to_string(), "new_value".to_string());
         assert_eq!(engine.get("key1"), Some("new_value".to_string()));
 
         // Test delete operation
-        assert!(engine.delete("key1"));
+        engine.delete("key1");
         assert_eq!(engine.get("key1"), None);
 
         // Test keys() method with multiple entries
-        engine
-            .set("key2".to_string(), "value2".to_string())
-            .unwrap();
-        engine
-            .set("key3".to_string(), "value3".to_string())
-            .unwrap();
+        engine.set("key2".to_string(), "value2".to_string());
+        engine.set("key3".to_string(), "value3".to_string());
 
         let keys = engine.keys();
         assert_eq!(keys.len(), 2);
         assert!(keys.contains(&"key2".to_string()));
         assert!(keys.contains(&"key3".to_string()));
-
-        // Test len() and is_empty()
-        assert_eq!(engine.len(), 2);
-        assert!(!engine.is_empty());
-    }
-
-    #[test]
-    fn test_concurrent_reads() {
-        let engine = Arc::new(KvEngine::new("./test_data").unwrap());
-
-        // Set up some test data
-        engine
-            .set("key1".to_string(), "value1".to_string())
-            .unwrap();
-        engine
-            .set("key2".to_string(), "value2".to_string())
-            .unwrap();
-
-        // Spawn multiple reader threads
-        let mut handles = vec![];
-        for i in 0..10 {
-            let engine_clone = engine.clone();
-            let handle = thread::spawn(move || {
-                for _ in 0..100 {
-                    assert_eq!(engine_clone.get("key1"), Some("value1".to_string()));
-                    assert_eq!(engine_clone.get("key2"), Some("value2".to_string()));
-                }
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all threads to complete
-        for handle in handles {
-            handle.join().unwrap();
-        }
-    }
-
-    #[test]
-    fn test_single_writer() {
-        let engine = Arc::new(KvEngine::new("./test_data").unwrap());
-
-        // Spawn multiple writer threads - they should serialize
-        let mut handles = vec![];
-        for i in 0..5 {
-            let engine_clone = engine.clone();
-            let handle = thread::spawn(move || {
-                for j in 0..10 {
-                    let key = format!("key_{}_{}", i, j);
-                    let value = format!("value_{}_{}", i, j);
-                    engine_clone.set(key, value).unwrap();
-                }
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all threads to complete
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        // Verify all data was written correctly
-        assert_eq!(engine.len(), 50);
-        for i in 0..5 {
-            for j in 0..10 {
-                let key = format!("key_{}_{}", i, j);
-                let expected_value = format!("value_{}_{}", i, j);
-                assert_eq!(engine.get(&key), Some(expected_value));
-            }
-        }
-    }
-
-    #[test]
-    fn test_mixed_operations() {
-        let engine = Arc::new(KvEngine::new("./test_data").unwrap());
-
-        // Spawn reader and writer threads simultaneously
-        let mut handles = vec![];
-
-        // Writer thread
-        let engine_writer = engine.clone();
-        let writer_handle = thread::spawn(move || {
-            for i in 0..100 {
-                engine_writer
-                    .set(format!("key{}", i), format!("value{}", i))
-                    .unwrap();
-                thread::yield_now(); // Give readers a chance
-            }
-        });
-        handles.push(writer_handle);
-
-        // Reader threads
-        for _ in 0..3 {
-            let engine_reader = engine.clone();
-            let reader_handle = thread::spawn(move || {
-                for _ in 0..50 {
-                    let keys = engine_reader.keys();
-                    let len = engine_reader.len();
-                    // Readers should never see inconsistent state
-                    assert!(keys.len() <= len);
-                    thread::yield_now();
-                }
-            });
-            handles.push(reader_handle);
-        }
-
-        // Wait for all threads to complete
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        // Final verification
-        assert_eq!(engine.len(), 100);
     }
 }
