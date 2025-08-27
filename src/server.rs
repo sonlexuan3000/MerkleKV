@@ -29,7 +29,7 @@ use anyhow::Result;
 use log::{error, info};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 
@@ -131,7 +131,7 @@ impl Server {
 /// * `Result<()>` - Success when client disconnects normally, error on failures
 /// 
 /// # Protocol Handling
-/// - Reads commands from the socket in 1KB chunks
+/// - Reads line-delimited commands from the socket (until \r\n or \n)
 /// - Parses commands using the Protocol parser
 /// - Executes commands against the storage engine
 /// - Sends appropriate responses back to the client
@@ -141,54 +141,62 @@ impl Server {
 /// - Network errors terminate the connection
 /// - Storage errors are converted to ERROR responses
 async fn handle_connection(
-    mut socket: TcpStream,
+    socket: TcpStream,
     addr: SocketAddr,
     store: Arc<Mutex<KvEngine>>,
 ) -> Result<()> {
-    let mut buffer = [0; 1024];
+    let mut reader = BufReader::new(socket);
+    let mut line = String::new();
 
-    while let Ok(n) = socket.read(&mut buffer).await {
-        if n == 0 {
-            // Client closed the connection
-            info!("Connection closed by {}", addr);
-            return Ok(());
-        }
-
-        // Convert received bytes to string
-        let request = std::str::from_utf8(&buffer[..n])?;
-        let protocol = Protocol::new();
+    loop {
+        line.clear();
         
-        match protocol.parse(request) {
-            Ok(command) => {
-                // Lock the storage for the duration of this command
-                let mut store = store.lock().await;
-                let response = match command {
-                    Command::Get { key } => {
-                        match store.get(&key) {
-                            Some(value) => format!("VALUE {}\r\n", value),
-                            None => "NOT_FOUND\r\n".to_string(),
-                        }
-                    }
-                    Command::Set { key, value } => {
-                        store.set(key, value);
-                        "OK\r\n".to_string()
-                    }
-                    Command::Delete { key } => {
-                        store.delete(&key);
-                        "OK\r\n".to_string()
-                    }
-                };
+        // Read a complete line (until \r\n or \n)
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                // Client closed the connection
+                info!("Connection closed by {}", addr);
+                return Ok(());
+            }
+            Ok(_) => {
+                // Process the command
+                let protocol = Protocol::new();
                 
-                // Send response back to client
-                socket.write_all(response.as_bytes()).await?;
+                match protocol.parse(&line) {
+                    Ok(command) => {
+                        // Lock the storage for the duration of this command
+                        let mut store = store.lock().await;
+                        let response = match command {
+                            Command::Get { key } => {
+                                match store.get(&key) {
+                                    Some(value) => format!("VALUE {}\r\n", value),
+                                    None => "NOT_FOUND\r\n".to_string(),
+                                }
+                            }
+                            Command::Set { key, value } => {
+                                store.set(key, value);
+                                "OK\r\n".to_string()
+                            }
+                            Command::Delete { key } => {
+                                store.delete(&key);
+                                "OK\r\n".to_string()
+                            }
+                        };
+                        
+                        // Send response back to client
+                        reader.get_mut().write_all(response.as_bytes()).await?;
+                    }
+                    Err(e) => {
+                        // Send error response for invalid commands
+                        let error_msg = format!("ERROR {}\r\n", e);
+                        reader.get_mut().write_all(error_msg.as_bytes()).await?;
+                    }
+                }
             }
             Err(e) => {
-                // Send error response for invalid commands
-                let error_msg = format!("ERROR {}\r\n", e);
-                socket.write_all(error_msg.as_bytes()).await?;
+                error!("Error reading from connection {}: {}", addr, e);
+                return Err(e.into());
             }
         }
     }
-
-    Ok(())
 }
