@@ -187,6 +187,36 @@ class MerkleKVClient:
     def delete(self, key: str) -> str:
         """Delete a key."""
         return self.send_command(f"DELETE {key}")
+    
+    def increment(self, key: str, amount: Optional[int] = None) -> str:
+        """Increment a numeric value."""
+        if amount is not None:
+            return self.send_command(f"INC {key} {amount}")
+        else:
+            return self.send_command(f"INC {key}")
+    
+    def decrement(self, key: str, amount: Optional[int] = None) -> str:
+        """Decrement a numeric value."""
+        if amount is not None:
+            return self.send_command(f"DEC {key} {amount}")
+        else:
+            return self.send_command(f"DEC {key}")
+    
+    def append(self, key: str, value: str) -> str:
+        """Append a value to an existing string."""
+        # Handle empty values properly by quoting them
+        if value == "":
+            return self.send_command(f'APPEND {key} ""')
+        else:
+            return self.send_command(f"APPEND {key} {value}")
+    
+    def prepend(self, key: str, value: str) -> str:
+        """Prepend a value to an existing string."""
+        # Handle empty values properly by quoting them
+        if value == "":
+            return self.send_command(f'PREPEND {key} ""')
+        else:
+            return self.send_command(f"PREPEND {key} {value}")
 
 @pytest.fixture(scope="session")
 def temp_test_dir() -> Generator[Path, None, None]:
@@ -263,4 +293,23 @@ def generate_test_data(size: int = 100) -> dict[str, str]:
     for i in range(size):
         key = f"test_key_{i}"
         value = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
-        data[key] = value 
+        data[key] = value
+
+
+def connect_to_server(host: str = TEST_HOST, port: int = TEST_PORT):
+    """Connect to the MerkleKV server and return a socket."""
+    sock = socket.create_connection((host, port), timeout=CLIENT_TIMEOUT)
+    return sock
+
+
+def send_command(client, command: str) -> str:
+    """Send a command to the server and return the response.
+    
+    This is a helper function for tests that use raw sockets instead of the MerkleKVClient class.
+    """
+    # Send command
+    client.send(f"{command}\r\n".encode())
+    
+    # Receive response
+    response = client.recv(1024).decode().strip()
+    return response
