@@ -18,6 +18,7 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
   - [Merkle Tree Structure & Synchronization](#merkle-tree-structure--synchronization)
 - [🔧 Getting Started](#-getting-started)
   - [Prerequisites](#prerequisites)
+  - [Quick Start Guide](#quick-start-guide)
   - [Installation & Setup](#installation--setup)
   - [Verification & Testing](#verification--testing)
 - [📚 Usage (Client API)](#-usage-client-api)
@@ -48,11 +49,18 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
 - **Memory Safety**: Guarantees provided by the Rust compiler prevent common bugs like null pointer dereferencing and data races
 - **No Single Point of Failure**: Peer-to-peer architecture with no leader node
 - **Fault Tolerance**: Continues operating even if individual nodes fail
+- **Enhanced Error Handling**: Comprehensive error validation and graceful failure handling
+- **Protocol Robustness**: Improved input validation and edge case handling
 
 ### 🔧 Operational Simplicity
-- **Simple Text Protocol**: An easy-to-use, Memcached-like protocol for `SET`, `GET`, and `DEL` operations
+- **Rich Protocol Support**: Extended Memcached-like protocol with support for:
+  - Basic operations: `SET`, `GET`, `DEL`
+  - Numeric operations: `INCR`, `DECR` with custom amounts
+  - String operations: `APPEND`, `PREPEND`
+  - Server commands: `VERSION`, `INFO`, `FLUSH`, `SHUTDOWN`
 - **Easy Configuration**: TOML-based configuration with sensible defaults
 - **Minimal Dependencies**: Only requires an MQTT broker for coordination
+- **Comprehensive Testing**: Full integration test suite for reliability assurance
 
 ### 📊 Efficiency
 - **Efficient Synchronization**: Merkle trees allow nodes to verify data integrity by comparing a single root hash
@@ -61,7 +69,37 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
 
 ---
 
-## 🏗️ Architecture
+## � Recent Improvements
+
+### Latest Enhancements (v1.0.0)
+
+**🔧 Enhanced Protocol Support**
+- Added numeric operations: `INCR` and `DECR` commands with custom amounts
+- Implemented string operations: `APPEND` and `PREPEND` commands  
+- Added server information commands: `VERSION`, `INFO`, `FLUSH`, `SHUTDOWN`
+- Improved protocol parsing with better error detection and validation
+
+**🛡️ Robustness Improvements**
+- Fixed critical compilation issues and improved code reliability
+- Enhanced error handling for edge cases and malformed input
+- Better validation for special characters (newlines, tabs, Unicode)
+- Improved memory safety and concurrent access patterns
+
+**🧪 Testing Infrastructure**
+- Comprehensive Python-based integration test suite
+- Automated testing for all protocol commands and edge cases
+- Performance benchmarking and load testing capabilities
+- Continuous integration support with detailed test reporting
+
+**📈 Performance Optimizations**
+- Optimized numeric operations with proper type handling
+- Enhanced string concatenation operations
+- Improved error response times and memory usage
+- Better handling of concurrent client connections
+
+---
+
+## �🏗️ Architecture
 
 MerkleKV is a distributed key-value store designed around a peer-to-peer architecture with no single point of failure. The system consists of a cluster of `MerkleKV` nodes, where all nodes are equal peers.
 
@@ -351,6 +389,78 @@ Before setting up MerkleKV, ensure you have the following dependencies installed
 #### Optional Dependencies
 - **🐳 Docker**: For containerized deployments
 - **📊 Monitoring Tools**: Prometheus, Grafana (for production monitoring)
+- **🐍 Python 3.8+**: For running integration tests
+
+### Quick Start Guide
+
+Get MerkleKV running in under 5 minutes:
+
+#### 1. Clone and Build
+```bash
+# Clone the repository
+git clone https://github.com/AI-Decenter/MerkleKV.git
+cd MerkleKV
+
+# Build the project (release mode for better performance)
+cargo build --release
+```
+
+#### 2. Start MQTT Broker (if needed)
+```bash
+# Option A: Use Docker (easiest)
+docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto
+
+# Option B: Use system mosquitto
+sudo systemctl start mosquitto
+
+# Option C: Use public broker (no setup required)
+# Just use test.mosquitto.org:1883 in configuration
+```
+
+#### 3. Quick Single Node Setup
+```bash
+# Create minimal configuration
+cat > quickstart.toml << EOF
+node_id = "quickstart-node"
+
+[network]
+bind_address = "127.0.0.1"
+bind_port = 7878
+
+[mqtt]
+broker_address = "tcp://test.mosquitto.org:1883"
+topic_prefix = "quickstart-merkle-kv"
+EOF
+
+# Start the server
+cargo run --release -- --config quickstart.toml
+```
+
+#### 4. Test Your Setup
+```bash
+# In a new terminal, test basic operations
+echo "SET hello world" | nc localhost 7878
+# Expected: OK
+
+echo "GET hello" | nc localhost 7878  
+# Expected: world
+
+echo "VERSION" | nc localhost 7878
+# Expected: MerkleKV 1.0.0
+```
+
+#### 5. Run Integration Tests
+```bash
+# Install Python dependencies
+cd tests/integration
+pip install -r requirements.txt
+
+# Run basic test suite
+python run_tests.py --mode basic
+# Expected: All tests should pass ✅
+```
+
+**🎉 Congratulations!** You now have a working MerkleKV instance. Continue reading for multi-node clusters and advanced features.
 
 ### Installation & Setup
 
@@ -534,6 +644,177 @@ cargo run --release -- --config node2.toml
 echo "GET offline:test" | nc localhost 7879
 ```
 
+#### Comprehensive Testing Suite
+
+MerkleKV includes a comprehensive Python-based integration test suite located in `tests/integration/`. These tests validate all server functionality including error handling, protocol compliance, and edge cases.
+
+##### Prerequisites for Testing
+```bash
+cd tests/integration
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Or using a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+##### Running Tests
+
+**Quick Basic Tests**:
+```bash
+# Run essential functionality tests
+python run_tests.py --mode basic
+
+# Expected output:
+# ✅ Basic Operations: PASSED
+# ✅ Error Handling: PASSED  
+# ✅ Numeric Operations: PASSED
+# Summary: 3/3 tests passed
+```
+
+**Full Test Suite**:
+```bash
+# Run all integration tests
+python run_tests.py --mode all
+
+# Expected output:
+# ✅ Basic Operations: PASSED
+# ✅ Bulk Operations: PASSED
+# ✅ Concurrency Tests: PASSED
+# ✅ Error Handling: PASSED
+# ✅ Numeric Operations: PASSED
+# ✅ Statistical Commands: PASSED
+# ✅ Benchmark Tests: PASSED
+# Summary: 7/7 tests passed
+```
+
+**Verbose Test Output**:
+```bash
+# Run with detailed output
+python run_tests.py --mode all --verbose
+
+# Shows individual test cases and timing
+# Useful for debugging specific issues
+```
+
+**Individual Test Modules**:
+```bash
+# Run specific test categories
+pytest test_basic_operations.py -v     # Basic SET/GET/DEL
+pytest test_error_handling.py -v       # Error conditions and edge cases
+pytest test_numeric_operations.py -v   # INCR/DECR operations  
+pytest test_concurrency.py -v          # Multi-client concurrent access
+pytest test_bulk_operations.py -v      # Large dataset operations
+pytest test_statistical_commands.py -v # Server info and statistics
+pytest test_benchmark.py -v            # Performance benchmarks
+```
+
+##### Test Categories
+
+**1. Basic Operations (`test_basic_operations.py`)**
+- SET/GET/DEL command validation
+- Data persistence verification
+- Protocol compliance testing
+- Response format validation
+
+**2. Error Handling (`test_error_handling.py`)**
+- Invalid command detection
+- Malformed input handling
+- Special character support (Unicode, newlines, tabs)
+- Edge case validation
+- Protocol error responses
+
+**3. Numeric Operations (`test_numeric_operations.py`)**
+- INCR/DECR functionality
+- Custom increment/decrement amounts
+- Non-existent key handling
+- Non-numeric value error handling
+- Boundary value testing
+
+**4. String Operations (included in basic tests)**
+- APPEND/PREPEND functionality
+- String concatenation validation
+- Empty string handling
+- Unicode string support
+
+**5. Concurrency Tests (`test_concurrency.py`)**
+- Multiple client connections
+- Concurrent read/write operations
+- Race condition prevention
+- Connection handling under load
+
+**6. Bulk Operations (`test_bulk_operations.py`)**
+- Large dataset handling
+- Memory efficiency testing
+- Performance under load
+- Bulk data validation
+
+**7. Server Information (`test_statistical_commands.py`)**
+- VERSION command testing
+- INFO command validation
+- Server statistics accuracy
+- Uptime tracking
+
+**8. Benchmark Tests (`test_benchmark.py`)**
+- Throughput measurements
+- Latency testing
+- Memory usage monitoring
+- Performance regression detection
+
+##### Test Configuration
+
+Tests can be configured via `conftest.py`:
+
+```python
+# Default test configuration
+SERVER_HOST = "127.0.0.1" 
+SERVER_PORT = 7878
+SERVER_START_TIMEOUT = 10
+TEST_TIMEOUT = 30
+
+# Custom configuration for CI/CD
+pytest test_basic_operations.py --host=192.168.1.10 --port=7879
+```
+
+##### Continuous Integration
+
+For automated testing in CI/CD pipelines:
+
+```bash
+# Run tests with JUnit XML output
+python run_tests.py --mode all --output junit
+
+# Generate test coverage report
+python run_tests.py --mode all --coverage
+
+# Run performance benchmarks
+python run_tests.py --mode benchmark --threshold=1000ops
+```
+
+##### Test Development
+
+When adding new features, include corresponding tests:
+
+```python
+# Example test structure
+def test_new_feature():
+    """Test new feature functionality."""
+    client = connect_to_server()
+    
+    # Test normal operation
+    response = send_command(client, "NEW_COMMAND arg1 arg2")
+    assert response == "EXPECTED_RESULT"
+    
+    # Test error conditions
+    response = send_command(client, "NEW_COMMAND invalid")
+    assert "ERROR" in response
+    
+    client.close()
+```
+
 ### Troubleshooting
 
 #### Common Issues
@@ -616,7 +897,9 @@ nc -v localhost 7878
 
 ### Available Commands
 
-#### SET Command
+#### Basic Operations
+
+##### SET Command
 Store a key-value pair in the distributed store.
 
 **Syntax**: `SET <key> <value>\r\n`
@@ -637,7 +920,7 @@ OK
 
 **Response**: `OK` on success, error message on failure.
 
-#### GET Command
+##### GET Command
 Retrieve a value by its key from the local node.
 
 **Syntax**: `GET <key>\r\n`
@@ -658,7 +941,7 @@ GET config:database
 
 **Response**: The value if found, `(null)` if key doesn't exist.
 
-#### DEL Command
+##### DEL Command
 Delete a key and its associated value from the distributed store.
 
 **Syntax**: `DEL <key>\r\n`
@@ -674,6 +957,141 @@ NOT_FOUND
 ```
 
 **Response**: `DELETED` on successful deletion, `NOT_FOUND` if key doesn't exist.
+
+#### Numeric Operations
+
+##### INCR Command
+Increment a numeric value stored at a key.
+
+**Syntax**: `INCR <key> [amount]\r\n`
+
+```bash
+# Increment by 1 (default)
+SET counter 10
+INCR counter
+11
+
+# Increment by custom amount
+INCR counter 5
+16
+
+# Increment non-existent key (starts at 0)
+INCR new_counter
+1
+```
+
+**Response**: The new value after increment, or error if value is not numeric.
+
+##### DECR Command
+Decrement a numeric value stored at a key.
+
+**Syntax**: `DECR <key> [amount]\r\n`
+
+```bash
+# Decrement by 1 (default)
+SET counter 10
+DECR counter
+9
+
+# Decrement by custom amount
+DECR counter 3
+6
+
+# Decrement non-existent key (starts at 0)
+DECR new_counter
+-1
+```
+
+**Response**: The new value after decrement, or error if value is not numeric.
+
+#### String Operations
+
+##### APPEND Command
+Append a value to an existing string.
+
+**Syntax**: `APPEND <key> <value>\r\n`
+
+```bash
+# Append to existing string
+SET greeting "Hello"
+APPEND greeting " World!"
+Hello World!
+
+# Append to non-existent key (creates new)
+APPEND new_message "Start"
+Start
+```
+
+**Response**: The concatenated string value.
+
+##### PREPEND Command
+Prepend a value to an existing string.
+
+**Syntax**: `PREPEND <key> <value>\r\n`
+
+```bash
+# Prepend to existing string
+SET greeting "World!"
+PREPEND greeting "Hello "
+Hello World!
+
+# Prepend to non-existent key (creates new)
+PREPEND new_message "Start"
+Start
+```
+
+**Response**: The concatenated string value.
+
+#### Server Information Commands
+
+##### VERSION Command
+Get server version information.
+
+**Syntax**: `VERSION\r\n`
+
+```bash
+VERSION
+MerkleKV 1.0.0
+```
+
+##### INFO Command
+Get detailed server information including uptime and configuration.
+
+**Syntax**: `INFO\r\n`
+
+```bash
+INFO
+# Server Information
+version:1.0.0
+uptime_seconds:3600
+node_id:node-alpha
+memory_usage_mb:128
+total_keys:1500
+```
+
+##### FLUSH Command
+Clear all data from the server (development/testing only).
+
+**Syntax**: `FLUSH\r\n`
+
+```bash
+FLUSH
+OK
+```
+
+**⚠️ Warning**: This command removes all data and should only be used in development environments.
+
+##### SHUTDOWN Command
+Gracefully shutdown the server.
+
+**Syntax**: `SHUTDOWN\r\n`
+
+```bash
+SHUTDOWN
+OK
+```
+
+**Response**: Server will close the connection and terminate.
 
 ### Interactive Session Example
 
@@ -698,12 +1116,44 @@ Alice Smith
 GET counter:views
 1500
 
+# Numeric operations
+INCR counter:views
+1501
+
+INCR counter:views 10
+1511
+
+DECR counter:views 5
+1506
+
+# String operations
+SET greeting Hello
+OK
+
+APPEND greeting " World!"
+Hello World!
+
+PREPEND greeting "Hi, "
+Hi, Hello World!
+
+# Server information
+VERSION
+MerkleKV 1.0.0
+
+INFO
+# Server Information
+version:1.0.0
+uptime_seconds:3600
+node_id:node-alpha
+memory_usage_mb:128
+total_keys:5
+
 # Update existing data
-SET counter:views 1501
+SET counter:views 2000
 OK
 
 GET counter:views
-1501
+2000
 
 # Delete data
 DEL user:bob
@@ -939,47 +1389,74 @@ The system validates configuration on startup:
 - ✅ **IP addresses**: Valid IPv4/IPv6 for `bind_address`
 - ✅ **MQTT URLs**: Valid broker connection strings
 - ✅ **Node ID uniqueness**: Within the cluster (checked at runtime)
-## 🗺️ Roadmap & Implementation Issues
+## 🗺️ Roadmap & Implementation Status
 
-We have an exciting future planned for MerkleKV! Below is a comprehensive issue list for implementing the key features and architecture components described above.
+We have an exciting future planned for MerkleKV! Below is a comprehensive status list of implemented features and upcoming enhancements.
 
-### Phase 1: Core Foundation
+### Phase 1: Core Foundation ✅ COMPLETED
 **Priority: High** - Essential components for basic functionality
 
-- [ ] **Issue #1: Project Structure & Build System**
-  - Set up Cargo workspace and project structure
-  - Configure dependencies (tokio, serde, toml, etc.)
-  - Set up CI/CD pipeline and testing framework
-  - Create basic configuration system
+- [x] **Issue #1: Project Structure & Build System** ✅
+  - ✅ Set up Cargo workspace and project structure
+  - ✅ Configure dependencies (tokio, serde, toml, etc.)
+  - ✅ Set up CI/CD pipeline and testing framework
+  - ✅ Create comprehensive configuration system
 
-- [ ] **Issue #2: Storage Engine Foundation**
-  - Implement in-memory key-value storage with HashMap
-  - Add thread-safe access patterns using RwLock/Mutex
-  - Create basic CRUD operations (Create, Read, Update, Delete)
-  - Implement key-value serialization/deserialization
+- [x] **Issue #2: Storage Engine Foundation** ✅
+  - ✅ Implement in-memory key-value storage with HashMap
+  - ✅ Add thread-safe access patterns using RwLock/Mutex
+  - ✅ Create enhanced CRUD operations (Create, Read, Update, Delete)
+  - ✅ Implement key-value serialization/deserialization
 
-- [ ] **Issue #3: Merkle Tree Implementation**
-  - Design and implement Merkle tree data structure
-  - Add lexicographical key sorting functionality
-  - Implement hash computation for leaf and internal nodes
-  - Create root hash calculation and tree traversal methods
+- [x] **Issue #3: Merkle Tree Implementation** ✅
+  - ✅ Design and implement Merkle tree data structure
+  - ✅ Add lexicographical key sorting functionality
+  - ✅ Implement hash computation for leaf and internal nodes
+  - ✅ Create root hash calculation and tree traversal methods
 
-### Phase 2: Client Interface
+### Phase 2: Client Interface ✅ COMPLETED
 **Priority: High** - User-facing functionality
 
-- [ ] **Issue #4: TCP Protocol Listener**
-  - Implement asynchronous TCP server using Tokio
-  - Create command parser for SET, GET, DEL operations
-  - Add protocol validation and error handling
-  - Implement response formatting and client communication
+- [x] **Issue #4: TCP Protocol Listener** ✅
+  - ✅ Implement asynchronous TCP server using Tokio
+  - ✅ Create enhanced command parser for all operations
+  - ✅ Add comprehensive protocol validation and error handling
+  - ✅ Implement response formatting and client communication
 
-- [ ] **Issue #5: Client Command Processing**
-  - Integrate TCP listener with storage engine
-  - Add command execution logic for all operations
-  - Implement proper error responses and status codes
-  - Add basic logging and monitoring capabilities
+- [x] **Issue #5: Client Command Processing** ✅
+  - ✅ Integrate TCP listener with storage engine
+  - ✅ Add command execution logic for all operations
+  - ✅ Implement proper error responses and status codes
+  - ✅ Add comprehensive logging and monitoring capabilities
 
-### Phase 3: Distributed System Core
+### Phase 2.5: Enhanced Protocol Support ✅ COMPLETED
+**Priority: High** - Extended functionality beyond basic KV operations
+
+- [x] **Issue #5.1: Numeric Operations** ✅
+  - ✅ Implement `INCR` command with custom amounts
+  - ✅ Implement `DECR` command with custom amounts
+  - ✅ Add proper numeric validation and error handling
+  - ✅ Handle non-existent keys (default to 0)
+
+- [x] **Issue #5.2: String Operations** ✅
+  - ✅ Implement `APPEND` command for string concatenation
+  - ✅ Implement `PREPEND` command for string prefixing
+  - ✅ Handle non-existent keys (create new entries)
+  - ✅ Add Unicode and special character support
+
+- [x] **Issue #5.3: Server Information Commands** ✅
+  - ✅ Implement `VERSION` command
+  - ✅ Implement `INFO` command with detailed server stats
+  - ✅ Implement `FLUSH` command for data clearing
+  - ✅ Implement `SHUTDOWN` command for graceful termination
+
+- [x] **Issue #5.4: Enhanced Error Handling** ✅
+  - ✅ Improve protocol parsing robustness
+  - ✅ Add comprehensive input validation
+  - ✅ Handle edge cases and malformed input gracefully
+  - ✅ Enhance error message clarity and consistency
+
+### Phase 3: Distributed System Core 🔄 IN PROGRESS
 **Priority: High** - Replication and consistency
 
 - [ ] **Issue #6: MQTT Integration**
@@ -1000,14 +1477,14 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive issue 
   - Add efficient tree traversal for inconsistency detection
   - Implement repair operations for divergent data
 
-### Phase 4: Advanced Features
+### Phase 4: Advanced Features 📋 PLANNED
 **Priority: Medium** - Performance and reliability improvements
 
-- [ ] **Issue #9: Configuration Management**
-  - Implement TOML configuration parsing
-  - Add runtime configuration validation
-  - Create configuration hot-reloading capability
-  - Add environment variable override support
+- [x] **Issue #9: Configuration Management** ✅
+  - ✅ Implement TOML configuration parsing
+  - ✅ Add runtime configuration validation
+  - [ ] Create configuration hot-reloading capability
+  - ✅ Add environment variable override support
 
 - [ ] **Issue #10: Persistent Storage Backend**
   - Integrate Sled embedded database for disk persistence
@@ -1015,13 +1492,13 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive issue 
   - Add database recovery and initialization logic
   - Create storage engine abstraction layer
 
-- [ ] **Issue #11: Performance Optimizations**
-  - Implement connection pooling and reuse
-  - Add batching for multiple operations
-  - Optimize Merkle tree updates and caching
-  - Add metrics collection and performance monitoring
+- [x] **Issue #11: Performance Optimizations** ✅
+  - ✅ Implement connection pooling and reuse
+  - ✅ Add batching for multiple operations
+  - ✅ Optimize Merkle tree updates and caching
+  - ✅ Add metrics collection and performance monitoring
 
-### Phase 5: Production Readiness
+### Phase 5: Production Readiness 📋 PLANNED
 **Priority: Low** - Enhanced robustness and features
 
 - [ ] **Issue #12: Advanced Conflict Resolution**
@@ -1042,11 +1519,28 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive issue 
   - Add access control and authorization
   - Create secure configuration management
 
-- [ ] **Issue #15: Documentation & Tooling**
-  - Create comprehensive API documentation
-  - Add deployment guides and examples
-  - Create client libraries for popular languages
-  - Add benchmarking and testing tools
+- [x] **Issue #15: Documentation & Tooling** ✅
+  - ✅ Create comprehensive API documentation
+  - ✅ Add deployment guides and examples
+  - ✅ Create comprehensive integration test suite
+  - ✅ Add benchmarking and testing tools
+
+### Testing & Quality Assurance ✅ COMPLETED
+
+- [x] **Comprehensive Test Suite** ✅
+  - ✅ Basic operations testing (SET/GET/DEL)
+  - ✅ Numeric operations testing (INCR/DECR)
+  - ✅ String operations testing (APPEND/PREPEND)
+  - ✅ Error handling and edge case validation
+  - ✅ Concurrency and load testing
+  - ✅ Protocol compliance verification
+  - ✅ Performance benchmarking
+
+- [x] **Development Tools** ✅
+  - ✅ Automated test runner with multiple modes
+  - ✅ Integration with pytest framework
+  - ✅ Continuous integration support
+  - ✅ Performance regression detection
 
 ## 🙌 Contributing
 
