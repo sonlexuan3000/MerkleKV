@@ -197,11 +197,8 @@ impl Server {
                 Err(e) => format!("ERROR {}\r\n", e),
             },
             Command::Delete { key } => {
-                if store.delete(key) {
-                    "OK\r\n".to_string()
-                } else {
-                    "NOT_FOUND\r\n".to_string()
-                }
+                store.delete(key); // Always return OK, regardless of whether key existed
+                "OK\r\n".to_string()
             }
         }
     }
