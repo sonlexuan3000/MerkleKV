@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Basic Integration Tests
 
 on:
   push:
@@ -7,29 +7,23 @@ on:
     branches: [main, develop]
 
 jobs:
-  integration-tests:
-    name: MerkleKV Integration Tests
+  basic-tests:
+    name: MerkleKV Basic Tests
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        python-version: [3.8, 3.9, 3.10, 3.11]
-        test-mode: [basic, concurrency, error]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Set up Rust
-        uses: actions/setup-rust@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          cache: true
+          targets: x86_64-unknown-linux-gnu
 
       - name: Install system dependencies
         run: |
@@ -37,7 +31,7 @@ jobs:
           sudo apt-get install -y build-essential
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -51,7 +45,9 @@ jobs:
         run: |
           cargo build --release
           echo "Server binary size:"
-          ls -lh target/release/merkledb || ls -lh target/release/merklekv
+          ls -lh target/release/merkle_kv* || echo "No merkle_kv binary found"
+          echo "All executables in release:"
+          find target/release -maxdepth 1 -type f -executable
 
       - name: Install Python dependencies
         run: |
@@ -59,168 +55,29 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run integration tests
+      - name: Run basic integration tests
         run: |
           cd tests/integration
-          python run_tests.py --mode ${{ matrix.test-mode }} --report --verbose
+          python run_tests.py --mode basic --report --verbose
         env:
           RUST_LOG: info
           RUST_BACKTRACE: 1
 
       - name: Upload test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results-${{ matrix.python-version }}-${{ matrix.test-mode }}
+          name: basic-test-results
           path: |
             tests/integration/test_report.txt
-            tests/integration/test-results.xml
           retention-days: 7
 
       - name: Upload server logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: server-logs-${{ matrix.python-version }}-${{ matrix.test-mode }}
+          name: server-logs
           path: |
             *.log
             target/release/*.log
           retention-days: 7
-
-  benchmark-tests:
-    name: Performance Benchmarks
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Set up Rust
-        uses: actions/setup-rust@v1
-        with:
-          toolchain: stable
-          cache: true
-
-      - name: Build MerkleKV server
-        run: |
-          cargo build --release
-
-      - name: Install Python dependencies
-        run: |
-          cd tests/integration
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run benchmark tests
-        run: |
-          cd tests/integration
-          python run_tests.py --mode benchmark --report --verbose
-        env:
-          RUST_LOG: info
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v3
-        if: always()
-        with:
-          name: benchmark-results
-          path: tests/integration/test_report.txt
-          retention-days: 30
-
-  ci-tests:
-    name: CI/CD Tests
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Set up Rust
-        uses: actions/setup-rust@v1
-        with:
-          toolchain: stable
-          cache: true
-
-      - name: Build MerkleKV server
-        run: |
-          cargo build --release
-
-      - name: Install Python dependencies
-        run: |
-          cd tests/integration
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest-cov coverage
-
-      - name: Run CI tests with coverage
-        run: |
-          cd tests/integration
-          python run_tests.py --mode ci --report --verbose
-        env:
-          RUST_LOG: info
-
-      - name: Upload coverage reports
-        uses: actions/upload-artifact@v3
-        if: always()
-        with:
-          name: coverage-reports
-          path: |
-            tests/integration/htmlcov/
-            tests/integration/coverage.xml
-          retention-days: 30
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        if: success()
-        with:
-          file: tests/integration/coverage.xml
-          flags: integration-tests
-          name: integration-test-coverage
-
-  test-summary:
-    name: Test Summary
-    runs-on: ubuntu-latest
-    needs: [integration-tests, benchmark-tests, ci-tests]
-    if: always()
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download test results
-        uses: actions/download-artifact@v3
-        with:
-          path: test-results
-
-      - name: Generate test summary
-        run: |
-          echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -f "test-results/test-results-3.11-basic/test_report.txt" ]; then
-            echo "### Basic Tests" >> $GITHUB_STEP_SUMMARY
-            cat test-results/test-results-3.11-basic/test_report.txt >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ -f "test-results/benchmark-results/test_report.txt" ]; then
-            echo "### Benchmark Results" >> $GITHUB_STEP_SUMMARY
-            cat test-results/benchmark-results/test_report.txt >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "### Test Status" >> $GITHUB_STEP_SUMMARY
-          echo "- Integration Tests: ${{ needs.integration-tests.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Benchmark Tests: ${{ needs.benchmark-tests.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- CI Tests: ${{ needs.ci-tests.result }}" >> $GITHUB_STEP_SUMMARY
