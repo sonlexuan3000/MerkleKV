@@ -282,14 +282,14 @@ impl KVEngineStoreTrait for RwLockEngine {
     /// Append a value to an existing string.
     ///
     /// This method acquires an **exclusive write lock** to ensure thread safety.
-    /// If the key doesn't exist, an error is returned.
+    /// If the key doesn't exist, it will be created with the value.
     ///
     /// # Arguments
     /// * `key` - The key to append to
     /// * `value` - The value to append
     ///
     /// # Returns
-    /// * `Result<String>` - The new value after appending, or error if key doesn't exist
+    /// * `Result<String>` - The new value after appending
     ///
     /// # Thread Safety
     /// Only one thread can append at a time. Other threads will wait for the
@@ -308,21 +308,23 @@ impl KVEngineStoreTrait for RwLockEngine {
             
             Ok(new_value)
         } else {
-            Err(anyhow::anyhow!("Key '{}' not found", key))
+            // Key doesn't exist, create it with the value
+            data.insert(key.to_string(), value.to_string());
+            Ok(value.to_string())
         }
     }
     
     /// Prepend a value to an existing string.
     ///
     /// This method acquires an **exclusive write lock** to ensure thread safety.
-    /// If the key doesn't exist, an error is returned.
+    /// If the key doesn't exist, it will be created with the value.
     ///
     /// # Arguments
     /// * `key` - The key to prepend to
     /// * `value` - The value to prepend
     ///
     /// # Returns
-    /// * `Result<String>` - The new value after prepending, or error if key doesn't exist
+    /// * `Result<String>` - The new value after prepending
     ///
     /// # Thread Safety
     /// Only one thread can prepend at a time. Other threads will wait for the
@@ -341,7 +343,9 @@ impl KVEngineStoreTrait for RwLockEngine {
             
             Ok(new_value)
         } else {
-            Err(anyhow::anyhow!("Key '{}' not found", key))
+            // Key doesn't exist, create it with the value
+            data.insert(key.to_string(), value.to_string());
+            Ok(value.to_string())
         }
     }
     
@@ -375,6 +379,20 @@ impl KVEngineStoreTrait for RwLockEngine {
     fn count_keys(&self) -> Result<u64> {
         let data = self.data.read().unwrap();
         Ok(data.len() as u64)
+    }
+    
+    /// Force synchronization of pending changes to persistent storage.
+    /// For this in-memory engine, this is a no-op.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Always returns Ok(())
+    ///
+    /// # Thread Safety
+    /// Multiple threads can call this method concurrently without issues.
+    fn sync(&self) -> Result<()> {
+        // This is an in-memory engine, so there's nothing to sync
+        // In a persistent storage engine, this would flush data to disk
+        Ok(())
     }
 }
 

@@ -77,6 +77,9 @@ pub struct ServerStats {
     /// Number of statistical commands (STATS/INFO/PING) processed
     pub stat_commands: AtomicU64,
     
+    /// Number of server management commands (VERSION/FLUSH/SHUTDOWN) processed
+    pub management_commands: AtomicU64,
+    
     /// Server start time
     pub start_time: Instant,
 }
@@ -94,6 +97,7 @@ impl Clone for ServerStats {
             string_commands: AtomicU64::new(self.string_commands.load(Ordering::Relaxed)),
             bulk_commands: AtomicU64::new(self.bulk_commands.load(Ordering::Relaxed)),
             stat_commands: AtomicU64::new(self.stat_commands.load(Ordering::Relaxed)),
+            management_commands: AtomicU64::new(self.management_commands.load(Ordering::Relaxed)),
             start_time: self.start_time,
         }
     }
@@ -120,6 +124,7 @@ impl ServerStats {
             string_commands: AtomicU64::new(0),
             bulk_commands: AtomicU64::new(0),
             stat_commands: AtomicU64::new(0),
+            management_commands: AtomicU64::new(0),
             start_time: Instant::now(),
         }
     }
@@ -166,6 +171,9 @@ impl ServerStats {
             Command::Stats | Command::Info | Command::Ping => {
                 self.stat_commands.fetch_add(1, Ordering::Relaxed);
             }
+            Command::Version | Command::Flush | Command::Shutdown => {
+                self.management_commands.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
     
@@ -185,6 +193,7 @@ impl ServerStats {
         result.push_str(&format!("string_commands:{}\r\n", self.string_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("bulk_commands:{}\r\n", self.bulk_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("stat_commands:{}\r\n", self.stat_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("management_commands:{}\r\n", self.management_commands.load(Ordering::Relaxed)));
         
         // Add memory usage estimate (this is a very rough estimate)
         let estimated_memory_kb = std::process::Command::new("ps")
@@ -378,27 +387,93 @@ impl Server {
                             "OK\r\n".to_string()
                         }
                         Command::Increment { key, amount } => {
-                            match store.increment(&key, amount) {
-                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
-                                Err(e) => format!("ERROR {}\r\n", e),
+                            // Check if the key already exists
+                            let exists = store.get(&key).is_some();
+                            
+                            // If the key doesn't exist, create it with value 1 or the specified amount
+                            if !exists {
+                                let value = amount.unwrap_or(1).to_string();
+                                match store.set(key.clone(), value.clone()) {
+                                    Ok(_) => format!("VALUE {}\r\n", value),
+                                    Err(e) => format!("ERROR {}\r\n", e),
+                                }
+                            } else {
+                                // Otherwise, increment the existing value
+                                match store.increment(&key, amount) {
+                                    Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                    Err(e) => format!("ERROR {}\r\n", e),
+                                }
                             }
                         }
                         Command::Decrement { key, amount } => {
-                            match store.decrement(&key, amount) {
-                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
-                                Err(e) => format!("ERROR {}\r\n", e),
+                            // Check if the key already exists
+                            let exists = store.get(&key).is_some();
+                            
+                            // If the key doesn't exist, create it with value -1 or the negative of the specified amount
+                            if !exists {
+                                let value = (-(amount.unwrap_or(1))).to_string();
+                                match store.set(key.clone(), value.clone()) {
+                                    Ok(_) => format!("VALUE {}\r\n", value),
+                                    Err(e) => format!("ERROR {}\r\n", e),
+                                }
+                            } else {
+                                // Otherwise, decrement the existing value
+                                match store.decrement(&key, amount) {
+                                    Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                    Err(e) => format!("ERROR {}\r\n", e),
+                                }
                             }
                         }
                         Command::Append { key, value } => {
-                            match store.append(&key, &value) {
-                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
-                                Err(e) => format!("ERROR {}\r\n", e),
+                            // Handle empty values for APPEND
+                            if value.is_empty() {
+                                match store.get(&key) {
+                                    Some(current_value) => format!("VALUE {}\r\n", current_value),
+                                    None => "ERROR Key not found\r\n".to_string(),
+                                }
+                            } else {
+                                // Try to get the key first
+                                let current_value = store.get(&key);
+                                
+                                // If the key doesn't exist, create it with the value
+                                if current_value.is_none() {
+                                    match store.set(key.clone(), value.clone()) {
+                                        Ok(_) => format!("VALUE {}\r\n", value),
+                                        Err(e) => format!("ERROR {}\r\n", e),
+                                    }
+                                } else {
+                                    // Otherwise, append to the existing value
+                                    match store.append(&key, &value) {
+                                        Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                        Err(e) => format!("ERROR {}\r\n", e),
+                                    }
+                                }
                             }
                         }
                         Command::Prepend { key, value } => {
-                            match store.prepend(&key, &value) {
-                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
-                                Err(e) => format!("ERROR {}\r\n", e),
+                            // Handle empty values for PREPEND
+                            if value.is_empty() {
+                                match store.get(&key) {
+                                    Some(current_value) => format!("VALUE {}\r\n", current_value),
+                                    None => "ERROR Key not found\r\n".to_string(),
+                                }
+                            } else {
+                                // Try to get the key first
+                                let current_value = store.get(&key);
+                                
+                                // If the key doesn't exist, create it with the value
+                                if current_value.is_none() {
+                                    match store.set(key.clone(), value.clone()) {
+                                        Ok(_) => format!("VALUE {}\r\n", value),
+                                        Err(e) => format!("ERROR {}\r\n", e),
+                                    }
+                                } else {
+                                    // Otherwise, prepend to the existing value
+                                    match store.prepend(&key, &value) {
+                                        Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                        Err(e) => format!("ERROR {}\r\n", e),
+                                    }
+                                }
                             }
                         }
                         Command::MultiGet { keys } => {
@@ -467,6 +542,32 @@ impl Server {
                         }
                         Command::Ping => {
                             "PONG\r\n".to_string()
+                        }
+                        Command::Version => {
+                            // Return the server version from Cargo.toml
+                            format!("VERSION {}\r\n", env!("CARGO_PKG_VERSION"))
+                        }
+                        Command::Flush => {
+                            // Force sync to disk if the storage engine supports it
+                            match store.sync() {
+                                Ok(_) => "OK\r\n".to_string(),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Shutdown => {
+                            // Send OK response before shutting down
+                            let response = "OK\r\n".to_string();
+                            if let Err(e) = socket.write_all(response.as_bytes()).await {
+                                error!("Error writing to client {}: {}", addr, e);
+                            }
+                            
+                            // Log shutdown request
+                            info!("Shutdown requested by client {}", addr);
+                            
+                            // Exit the process gracefully
+                            // Note: In a production system, we would want to do a more graceful
+                            // shutdown, such as closing all connections, flushing data to disk, etc.
+                            std::process::exit(0);
                         }
                     };
                     

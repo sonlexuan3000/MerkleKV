@@ -131,6 +131,15 @@ pub enum Command {
     
     /// Simple health check command
     Ping,
+    
+    /// Return server version
+    Version,
+    
+    /// Force replication of pending changes
+    Flush,
+    
+    /// Gracefully shut down the server
+    Shutdown,
 }
 
 /// Protocol parser that converts text commands into structured Command enums.
@@ -188,7 +197,7 @@ impl Protocol {
         if input.contains('\t') {
             return Err(anyhow!("Invalid character: tab character not allowed"));
         }
-        if input.contains('\n') && input.trim() != input.trim_end_matches('\n') {
+        if input.contains('\n') {
             return Err(anyhow!("Invalid character: newline character not allowed"));
         }
 
@@ -206,6 +215,9 @@ impl Protocol {
                 "STATS" => return Ok(Command::Stats),
                 "INFO" => return Ok(Command::Info),
                 "PING" => return Ok(Command::Ping),
+                "VERSION" => return Ok(Command::Version),
+                "FLUSH" => return Ok(Command::Flush),
+                "SHUTDOWN" => return Ok(Command::Shutdown),
                 _ => return Err(anyhow!("Unknown command: {}", input)),
             }
         }
@@ -322,9 +334,7 @@ impl Protocol {
                 if key.is_empty() {
                     return Err(anyhow!("APPEND command key cannot be empty"));
                 }
-                if value.is_empty() {
-                    return Err(anyhow!("APPEND command value cannot be empty"));
-                }
+                // Allow empty values for APPEND
                 
                 Ok(Command::Append {
                     key: key.to_string(),
@@ -342,9 +352,7 @@ impl Protocol {
                 if key.is_empty() {
                     return Err(anyhow!("PREPEND command key cannot be empty"));
                 }
-                if value.is_empty() {
-                    return Err(anyhow!("PREPEND command value cannot be empty"));
-                }
+                // Allow empty values for PREPEND
                 
                 Ok(Command::Prepend {
                     key: key.to_string(),
@@ -625,6 +633,27 @@ mod tests {
         let protocol = Protocol::new();
         let result = protocol.parse("PING").unwrap();
         assert_eq!(result, Command::Ping);
+    }
+    
+    #[test]
+    fn test_parse_version() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("VERSION").unwrap();
+        assert_eq!(result, Command::Version);
+    }
+    
+    #[test]
+    fn test_parse_flush() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("FLUSH").unwrap();
+        assert_eq!(result, Command::Flush);
+    }
+    
+    #[test]
+    fn test_parse_shutdown() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("SHUTDOWN").unwrap();
+        assert_eq!(result, Command::Shutdown);
     }
 
     #[test]

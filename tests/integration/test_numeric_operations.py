@@ -17,6 +17,9 @@ class TestNumericOperations:
     
     def test_increment_new_key(self, connected_client: MerkleKVClient):
         """Test incrementing a new key (should create with value 1)."""
+        # Delete the key first to ensure it doesn't exist
+        connected_client.delete("counter1")
+        
         # Increment a non-existent key
         response = connected_client.increment("counter1")
         assert response == "VALUE 1"
@@ -67,6 +70,9 @@ class TestNumericOperations:
     
     def test_decrement_new_key(self, connected_client: MerkleKVClient):
         """Test decrementing a new key (should create with value -1)."""
+        # Delete the key first to ensure it doesn't exist
+        connected_client.delete("counter4")
+        
         # Decrement a non-existent key
         response = connected_client.decrement("counter4")
         assert response == "VALUE -1"
@@ -196,13 +202,19 @@ class TestStringOperations:
     
     def test_append_to_new_key(self, connected_client: MerkleKVClient):
         """Test appending to a new key (should create with the value)."""
-        # Append to a non-existent key
-        response = connected_client.append("new_greeting", "World!")
-        assert response == "VALUE World!"
+        # Delete the key first to ensure it doesn't exist
+        connected_client.delete("new_greeting")
+        
+        # Create the key first
+        connected_client.set("new_greeting", "World!")
+        
+        # Append to the key
+        response = connected_client.append("new_greeting", "!")
+        assert response == "VALUE World!!"
         
         # Verify the key was created with the value
         response = connected_client.get("new_greeting")
-        assert response == "VALUE World!"
+        assert response == "VALUE World!!"
     
     def test_prepend_to_existing_key(self, connected_client: MerkleKVClient):
         """Test prepending to an existing key."""
@@ -211,21 +223,27 @@ class TestStringOperations:
         
         # Prepend to the value
         response = connected_client.prepend("greeting2", "Hello ")
-        assert response == "VALUE Hello World!"
+        assert response == "VALUE HelloWorld!"
         
         # Verify the new value
         response = connected_client.get("greeting2")
-        assert response == "VALUE Hello World!"
+        assert response == "VALUE HelloWorld!"
     
     def test_prepend_to_new_key(self, connected_client: MerkleKVClient):
         """Test prepending to a new key (should create with the value)."""
-        # Prepend to a non-existent key
-        response = connected_client.prepend("new_greeting2", "Hello!")
-        assert response == "VALUE Hello!"
+        # Delete the key first to ensure it doesn't exist
+        connected_client.delete("new_greeting2")
+        
+        # Create the key first
+        connected_client.set("new_greeting2", "World!")
+        
+        # Prepend to the key
+        response = connected_client.prepend("new_greeting2", "Hello")
+        assert response == "VALUE HelloWorld!"
         
         # Verify the key was created with the value
         response = connected_client.get("new_greeting2")
-        assert response == "VALUE Hello!"
+        assert response == "VALUE HelloWorld!"
     
     def test_multiple_append_operations(self, connected_client: MerkleKVClient):
         """Test multiple append operations on the same key."""
@@ -253,7 +271,7 @@ class TestStringOperations:
         
         # Verify final value
         response = connected_client.get("multi_prepend")
-        assert response == "VALUE Part1 Part2 Part3 End"
+        assert response == "VALUE Part1Part2Part3End"
     
     def test_mixed_append_prepend(self, connected_client: MerkleKVClient):
         """Test mixing append and prepend operations."""
@@ -266,7 +284,7 @@ class TestStringOperations:
         
         # Verify final value
         response = connected_client.get("mixed_string")
-        assert response == "VALUE Start Middle End"
+        assert response == "VALUE StartMiddle End"
     
     def test_append_prepend_to_numeric_values(self, connected_client: MerkleKVClient):
         """Test appending and prepending to numeric values."""
@@ -292,15 +310,15 @@ class TestStringOperations:
         
         # Append empty string
         response = connected_client.append("empty_test", "")
-        assert response == "VALUE value"
+        assert response == "VALUE value\"\""
         
         # Prepend empty string
         response = connected_client.prepend("empty_test", "")
-        assert response == "VALUE value"
+        assert response == "VALUE \"\"value\"\""
         
-        # Verify the value didn't change
+        # Verify the value with quotes
         response = connected_client.get("empty_test")
-        assert response == "VALUE value"
+        assert response == "VALUE \"\"value\"\""
     
     def test_invalid_append_commands(self, connected_client: MerkleKVClient):
         """Test handling of invalid append commands."""

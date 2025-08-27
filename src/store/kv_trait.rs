@@ -118,4 +118,11 @@ pub trait KVEngineStoreTrait: Send + Sync {
     /// # Returns
     /// * `Result<u64>` - Number of key-value pairs or error
     fn count_keys(&self) -> Result<u64>;
+    
+    /// Force synchronization of pending changes to persistent storage.
+    /// For in-memory engines, this is a no-op.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error
+    fn sync(&self) -> Result<()>;
 }

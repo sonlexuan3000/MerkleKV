@@ -472,7 +472,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// * `value` - The value to append
     ///
     /// # Returns
-    /// * `Result<String>` - The new value after appending, or error if key doesn't exist
+    /// * `Result<String>` - The new value after appending
     fn append(&self, key: &str, value: &str) -> Result<String> {
         // This is unsafe for concurrent access!
         let mut new_data = HashMap::clone(&self.data);
@@ -494,7 +494,17 @@ impl KVEngineStoreTrait for KvEngine {
             
             Ok(new_value)
         } else {
-            Err(anyhow::anyhow!("Key '{}' not found", key))
+            // Key doesn't exist, create it with the value
+            new_data.insert(key.to_string(), value.to_string());
+            
+            unsafe {
+                let arc_ptr = Arc::into_raw(self.data.clone());
+                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+                *mutex_ptr = new_data;
+                let _ = Arc::from_raw(arc_ptr);
+            }
+            
+            Ok(value.to_string())
         }
     }
     
@@ -505,7 +515,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// * `value` - The value to prepend
     ///
     /// # Returns
-    /// * `Result<String>` - The new value after prepending, or error if key doesn't exist
+    /// * `Result<String>` - The new value after prepending
     fn prepend(&self, key: &str, value: &str) -> Result<String> {
         // This is unsafe for concurrent access!
         let mut new_data = HashMap::clone(&self.data);
@@ -527,7 +537,17 @@ impl KVEngineStoreTrait for KvEngine {
             
             Ok(new_value)
         } else {
-            Err(anyhow::anyhow!("Key '{}' not found", key))
+            // Key doesn't exist, create it with the value
+            new_data.insert(key.to_string(), value.to_string());
+            
+            unsafe {
+                let arc_ptr = Arc::into_raw(self.data.clone());
+                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
+                *mutex_ptr = new_data;
+                let _ = Arc::from_raw(arc_ptr);
+            }
+            
+            Ok(value.to_string())
         }
     }
     
@@ -553,6 +573,17 @@ impl KVEngineStoreTrait for KvEngine {
     /// * `Result<u64>` - Number of key-value pairs or error
     fn count_keys(&self) -> Result<u64> {
         Ok(self.data.len() as u64)
+    }
+    
+    /// Force synchronization of pending changes to persistent storage.
+    /// For this in-memory engine, this is a no-op.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Always returns Ok(())
+    fn sync(&self) -> Result<()> {
+        // This is an in-memory engine, so there's nothing to sync
+        // In a persistent storage engine, this would flush data to disk
+        Ok(())
     }
 }
 

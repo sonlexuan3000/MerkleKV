@@ -10,14 +10,14 @@ import time
 from conftest import send_command, connect_to_server
 
 
-def test_ping_command(server_process):
+def test_ping_command(server):
     """Test the PING command returns PONG."""
     with connect_to_server() as client:
         response = send_command(client, "PING")
         assert response == "PONG"
 
 
-def test_stats_command(server_process):
+def test_stats_command(server):
     """Test the STATS command returns server statistics."""
     with connect_to_server() as client:
         # First, perform some operations to generate statistics
@@ -54,7 +54,7 @@ def test_stats_command(server_process):
         assert int(stats["numeric_commands"]) >= 1  # We did at least one INC
 
 
-def test_info_command(server_process):
+def test_info_command(server):
     """Test the INFO command returns server information."""
     with connect_to_server() as client:
         response = send_command(client, "INFO")
@@ -78,7 +78,7 @@ def test_info_command(server_process):
         assert "db_keys" in info
 
 
-def test_stats_updates_with_commands(server_process):
+def test_stats_updates_with_commands(server):
     """Test that the STATS command reflects command execution counts."""
     with connect_to_server() as client:
         # Get initial stats
@@ -118,7 +118,7 @@ def test_stats_updates_with_commands(server_process):
         assert int(updated_stats["delete_commands"]) >= int(initial_stats.get("delete_commands", "0")) + num_deletes
 
 
-def test_info_shows_key_count(server_process):
+def test_info_shows_key_count(server):
     """Test that the INFO command shows the correct number of keys."""
     with connect_to_server() as client:
         # Clear any existing keys
@@ -154,7 +154,7 @@ def test_info_shows_key_count(server_process):
         assert int(info["db_keys"]) == num_keys - 1
 
 
-def test_uptime_increases(server_process):
+def test_uptime_increases(server):
     """Test that the uptime reported by STATS and INFO increases over time."""
     with connect_to_server() as client:
         # Get initial uptime

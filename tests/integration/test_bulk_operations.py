@@ -1,4 +1,4 @@
-k"""
+"""
 Integration tests for bulk operations in MerkleKV.
 
 This module tests the bulk operations functionality:
@@ -11,7 +11,7 @@ import pytest
 from conftest import connect_to_server
 
 
-def test_mget_single_key(server_process):
+def test_mget_single_key(server):
     """Test MGET with a single key."""
     client = connect_to_server()
     
@@ -27,7 +27,7 @@ def test_mget_single_key(server_process):
     client.close()
 
 
-def test_mget_multiple_keys(server_process):
+def test_mget_multiple_keys(server):
     """Test MGET with multiple keys."""
     client = connect_to_server()
     
@@ -52,7 +52,7 @@ def test_mget_multiple_keys(server_process):
     client.close()
 
 
-def test_mget_nonexistent_keys(server_process):
+def test_mget_nonexistent_keys(server):
     """Test MGET with nonexistent keys."""
     client = connect_to_server()
     
@@ -71,7 +71,7 @@ def test_mget_nonexistent_keys(server_process):
     client.close()
 
 
-def test_mget_all_nonexistent_keys(server_process):
+def test_mget_all_nonexistent_keys(server):
     """Test MGET with all nonexistent keys."""
     client = connect_to_server()
     
@@ -83,7 +83,7 @@ def test_mget_all_nonexistent_keys(server_process):
     client.close()
 
 
-def test_mset_single_pair(server_process):
+def test_mset_single_pair(server):
     """Test MSET with a single key-value pair."""
     client = connect_to_server()
     
@@ -98,7 +98,7 @@ def test_mset_single_pair(server_process):
     client.close()
 
 
-def test_mset_multiple_pairs(server_process):
+def test_mset_multiple_pairs(server):
     """Test MSET with multiple key-value pairs."""
     client = connect_to_server()
     
@@ -119,7 +119,7 @@ def test_mset_multiple_pairs(server_process):
     client.close()
 
 
-def test_mset_overwrite_existing(server_process):
+def test_mset_overwrite_existing(server):
     """Test MSET overwriting existing keys."""
     client = connect_to_server()
     
@@ -147,7 +147,7 @@ def test_mset_overwrite_existing(server_process):
     client.close()
 
 
-def test_truncate(server_process):
+def test_truncate(server):
     """Test TRUNCATE command."""
     client = connect_to_server()
     
@@ -189,7 +189,7 @@ def test_truncate(server_process):
     client.close()
 
 
-def test_bulk_operations_combined(server_process):
+def test_bulk_operations_combined(server):
     """Test a combination of bulk operations."""
     client = connect_to_server()
     
