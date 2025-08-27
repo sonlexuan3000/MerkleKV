@@ -202,6 +202,10 @@ impl Protocol {
                 "GET" | "SET" | "DELETE" | "DEL" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
                 }
+                "TRUNCATE" => return Ok(Command::Truncate),
+                "STATS" => return Ok(Command::Stats),
+                "INFO" => return Ok(Command::Info),
+                "PING" => return Ok(Command::Ping),
                 _ => return Err(anyhow!("Unknown command: {}", input)),
             }
         }
