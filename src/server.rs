@@ -4,7 +4,7 @@
 //! commands. It implements a simple request-response protocol over TCP sockets.
 //!
 //! ## Architecture
-//! 
+//!
 //! The server uses an asynchronous, multi-connection design:
 //! - Main server loop accepts incoming connections
 //! - Each connection spawns a separate async task
@@ -12,7 +12,7 @@
 //! - Responses are sent back to the client
 //!
 //! ## Protocol
-//! 
+//!
 //! The server implements a Redis-like text protocol:
 //! - Basic Commands: `GET key`, `SET key value`, `DELETE key`
 //! - Numeric Operations: `INC key [amount]`, `DEC key [amount]`
@@ -22,12 +22,12 @@
 //! - All messages are terminated with `\r\n`
 //!
 //! ## Concurrency
-//! 
+//!
 //! The storage engine is wrapped in `Arc<Mutex<>>` to allow safe concurrent access
 //! from multiple client connections. Each connection gets its own task but shares
 //! the same underlying storage.
 
-use crate::store::kv_engine::KvEngine;
+use crate::store::KVEngineStoreTrait;
 use anyhow::Result;
 use log::{error, info};
 use std::net::SocketAddr;
@@ -205,68 +205,85 @@ impl ServerStats {
 }
 
 /// TCP server for handling client connections.
-/// 
+///
 /// The server binds to a specified address and port, then accepts incoming
 /// connections and processes commands asynchronously.
 pub struct Server {
     /// Server configuration including bind address and port
     config: Config,
-    
+
+    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     /// The storage engine that will be shared across all client connections
-    store: KvEngine,
+    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
     
     /// Server statistics for monitoring and diagnostics
     stats: ServerStats,
+=======
+    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 }
 
 impl Server {
     /// Create a new server instance.
-    /// 
+    ///
     /// # Arguments
     /// * `config` - Server configuration (address, port, etc.)
     /// * `store` - Storage engine instance to use for all operations
-    /// 
+    ///
+    pub fn new(config: Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
+        Self { config, store }
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     /// # Returns
     /// * `Server` - New server instance ready to run
-    pub fn new(config: Config, store: KvEngine) -> Self {
+    pub fn new(config: Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
         Self { 
             config, 
             store,
             stats: ServerStats::new(),
         }
+=======
+    pub fn new(config: Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
+        Self { config, store }
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
     }
 
     /// Start the server and begin accepting connections.
-    /// 
+    ///
     /// This method runs indefinitely, accepting new connections and spawning
     /// tasks to handle them. Each connection gets its own async task but all
     /// share the same storage engine.
-    /// 
+    ///
     /// # Returns
     /// * `Result<()>` - Never returns normally, only on bind errors
-    /// 
+    ///
     /// # Errors
     /// Returns an error if:
     /// - Unable to bind to the specified address/port
     /// - Network-level errors occur
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let config = Config::default();
-    /// let store = KvEngine::new("./data")?;
+    /// let store = Box::new(RwLockEngine::new("./data")?);
     /// let server = Server::new(config, store);
     /// server.run().await?; // Runs forever
     /// ```
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
         info!("Server listening on {}", addr);
 
+        let store = Arc::new(Mutex::new(self.store));
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
         // Wrap the storage in `Arc<Mutex<>>` for safe concurrent access
-        let store = Arc::new(Mutex::new(self.store.clone()));
+        let store = Arc::new(Mutex::new(self.store));
         
         // Share server statistics across all connections
         let stats = Arc::new(self.stats.clone());
+=======
+        let store = Arc::new(Mutex::new(self.store));
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 
         // TODO: Add graceful shutdown handling
         // TODO: Add connection limits and rate limiting
@@ -274,7 +291,17 @@ impl Server {
         loop {
             match listener.accept().await {
                 Ok((socket, addr)) => {
+
+                    // Clone the Arc for this connection
+                    let store_clone = store.clone();
+
+                    // Spawn a new task to handle this connection
+                    tokio::spawn(async move {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone).await {
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
                     info!("Accepted connection from {}", addr);
+                    
+                    // Clone the Arc for this connection
                     let store_clone = Arc::clone(&store);
                     let stats_clone = Arc::clone(&stats);
                     
@@ -284,7 +311,16 @@ impl Server {
                     
                     // Spawn a new task for each client connection
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(socket, addr, store_clone, stats_clone.clone()).await {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone()).await {
+=======
+
+                    // Clone the Arc for this connection
+                    let store_clone = store.clone();
+
+                    // Spawn a new task to handle this connection
+                    tokio::spawn(async move {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone).await {
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
                             error!("Error handling connection from {}: {}", addr, e);
                         }
                         
@@ -293,172 +329,299 @@ impl Server {
                     });
                 }
                 Err(e) => {
-                    error!("Failed to accept connection: {}", e);
-                    // Continue accepting other connections despite this error
+                    error!("Error accepting connection: {}", e);
                 }
             }
         }
     }
-}
 
-/// Handle a single client connection.
-/// 
-/// This function processes commands from a client connection until the client
-/// disconnects or an error occurs. Each command is parsed, executed against
-/// the storage, and a response is sent back.
-/// 
-/// # Arguments
-/// * `socket` - The TCP stream for this client connection
-/// * `addr` - Client's address (for logging)
-/// * `store` - Shared reference to the storage engine
-/// 
-/// # Returns
-/// * `Result<()>` - Success when client disconnects normally, error on failures
-/// 
-/// # Protocol Handling
-/// - Reads commands from the socket in 1KB chunks
-/// - Parses commands using the Protocol parser
-/// - Executes commands against the storage engine
-/// - Sends appropriate responses back to the client
-/// 
-/// # Error Handling
-/// - Invalid commands result in ERROR responses
-/// - Network errors terminate the connection
-/// - Storage errors are converted to ERROR responses
-async fn handle_connection(
-    mut socket: TcpStream,
-    addr: SocketAddr,
-    store: Arc<Mutex<KvEngine>>,
-    stats: Arc<ServerStats>,
-) -> Result<()> {
-    let mut buffer = [0; 1024];
-
-    while let Ok(n) = socket.read(&mut buffer).await {
-        if n == 0 {
-            // Client closed the connection
-            info!("Connection closed by {}", addr);
-            return Ok(());
-        }
-
-        // Convert received bytes to string
-        let request = std::str::from_utf8(&buffer[..n])?;
+    /// Handle a single client connection.
+    ///
+    /// This method processes commands from a single client until the connection
+    /// is closed or an error occurs.
+    ///
+    /// # Arguments
+    /// * `socket` - The TCP socket for the client connection
+    /// * `addr` - Client address for logging purposes
+    /// * `store` - Shared storage engine wrapped in Arc<Mutex<>>
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success if connection handled cleanly, error otherwise
+    async fn handle_connection(
+        mut socket: TcpStream,
+        addr: SocketAddr,
+        store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
+    ) -> Result<()> {
+        let mut buffer = [0; 1024];
+        let mut protocol = Protocol::new();
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
+    /// Handle a single client connection.
+    ///
+    /// This method processes commands from a client connection until the client
+    /// disconnects or an error occurs. Each command is parsed, executed against
+    /// the storage, and a response is sent back.
+    /// 
+    /// # Arguments
+    /// * `socket` - The TCP stream for this client connection
+    /// * `addr` - Client's address (for logging)
+    /// * `store` - Shared reference to the storage engine
+    /// * `stats` - Shared reference to server statistics
+    /// 
+    /// # Returns
+    /// * `Result<()>` - Success when client disconnects normally, error on failures
+    /// 
+    /// # Protocol Handling
+    /// - Reads commands from the socket in 1KB chunks
+    /// - Parses commands using the Protocol parser
+    /// - Executes commands against the storage engine
+    /// - Sends appropriate responses back to the client
+    /// 
+    /// # Error Handling
+    /// - Invalid commands result in ERROR responses
+    /// - Network errors terminate the connection
+    /// - Storage errors are converted to ERROR responses
+    async fn handle_connection(
+        mut socket: TcpStream,
+        addr: SocketAddr,
+        store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
+        stats: Arc<ServerStats>,
+    ) -> Result<()> {
+        let mut buffer = [0; 1024];
         let protocol = Protocol::new();
-        
-        match protocol.parse(request) {
-            Ok(command) => {
-                // Update command statistics
-                stats.increment_command_counter(&command);
-                
-                // Lock the storage for the duration of this command
-                let mut store = store.lock().await;
-                let response = match command.clone() {
-                    Command::Get { key } => {
-                        match store.get(&key) {
-                            Some(value) => format!("VALUE {}\r\n", value),
-                            None => "NOT_FOUND\r\n".to_string(),
-                        }
-                    }
-                    Command::Set { key, value } => {
-                        store.set(key, value);
-                        "OK\r\n".to_string()
-                    }
-                    Command::Delete { key } => {
-                        store.delete(&key);
-                        "OK\r\n".to_string()
-                    }
-                    Command::Increment { key, amount } => {
-                        match store.increment(&key, amount) {
-                            Ok(new_value) => format!("VALUE {}\r\n", new_value),
-                            Err(e) => format!("ERROR {}\r\n", e),
-                        }
-                    }
-                    Command::Decrement { key, amount } => {
-                        match store.decrement(&key, amount) {
-                            Ok(new_value) => format!("VALUE {}\r\n", new_value),
-                            Err(e) => format!("ERROR {}\r\n", e),
-                        }
-                    }
-                    Command::Append { key, value } => {
-                        let new_value = store.append(&key, &value);
-                        format!("VALUE {}\r\n", new_value)
-                    }
-                    Command::Prepend { key, value } => {
-                        let new_value = store.prepend(&key, &value);
-                        format!("VALUE {}\r\n", new_value)
-                    }
-                    Command::MultiGet { keys } => {
-                        let mut response = String::new();
-                        let mut found_count = 0;
-                        
-                        for key in keys {
-                            match store.get(&key) {
-                                Some(value) => {
-                                    response.push_str(&format!("{} {}\r\n", key, value));
-                                    found_count += 1;
-                                }
-                                None => {
-                                    response.push_str(&format!("{} NOT_FOUND\r\n", key));
-                                }
-                            }
-                        }
-                        
-                        if found_count > 0 {
-                            format!("VALUES {}\r\n{}", found_count, response)
-                        } else {
-                            "NOT_FOUND\r\n".to_string()
-                        }
-                    }
-                    Command::MultiSet { pairs } => {
-                        for (key, value) in pairs {
-                            store.set(key, value);
-                        }
-                        "OK\r\n".to_string()
-                    }
-                    Command::Truncate => {
-                        store.truncate();
-                        "OK\r\n".to_string()
-                    }
-                    Command::Stats => {
-                        format!("STATS\r\n{}", stats.format_stats())
-                    }
-                    Command::Info => {
-                        let mut info = String::new();
-                        
-                        // Server version from Cargo.toml
-                        info.push_str(&format!("version:{}\r\n", env!("CARGO_PKG_VERSION")));
-                        
-                        // Server uptime
-                        info.push_str(&format!("uptime_seconds:{}\r\n", stats.uptime_seconds()));
-                        info.push_str(&format!("uptime:{}\r\n", stats.uptime_human()));
-                        
-                        // Current time
-                        let now = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or(Duration::from_secs(0))
-                            .as_secs();
-                        info.push_str(&format!("server_time_unix:{}\r\n", now));
-                        
-                        // Key count
-                        let key_count = store.keys().len();
-                        info.push_str(&format!("db_keys:{}\r\n", key_count));
-                        
-                        format!("INFO\r\n{}", info)
-                    }
-                    Command::Ping => {
-                        "PONG\r\n".to_string()
-                    }
-                };
-                
-                // Send response back to client
-                socket.write_all(response.as_bytes()).await?;
-            }
-            Err(e) => {
-                // Send error response for invalid commands
-                let error_msg = format!("ERROR {}\r\n", e);
-                socket.write_all(error_msg.as_bytes()).await?;
+=======
+    /// Handle a single client connection.
+    ///
+    /// This method processes commands from a single client until the connection
+    /// is closed or an error occurs.
+    ///
+    /// # Arguments
+    /// * `socket` - The TCP socket for the client connection
+    /// * `addr` - Client address for logging purposes
+    /// * `store` - Shared storage engine wrapped in Arc<Mutex<>>
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success if connection handled cleanly, error otherwise
+    async fn handle_connection(
+        mut socket: TcpStream,
+        addr: SocketAddr,
+        store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
+    ) -> Result<()> {
+        let mut buffer = [0; 1024];
+        let mut protocol = Protocol::new();
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
+
+        loop {
+            // Read data from the client
+            let n = match socket.read(&mut buffer).await {
+                Ok(0) => {
+                    // Client closed the connection
+                    info!("Client {} disconnected", addr);
+                    break;
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    error!("Error reading from client {}: {}", addr, e);
+                    break;
+                }
+            };
+
+        Ok(())
+    }
+
+    /// Execute a command against the storage engine.
+    ///
+    /// This method takes a parsed command and executes it against the provided
+    /// storage engine, returning the appropriate response string.
+    ///
+    /// # Arguments
+    /// * `command` - The parsed command to execute
+    /// * `store` - Reference to the storage engine
+    ///
+    /// # Returns
+    /// * `String` - The response to send back to the client
+    fn execute_command(command: &Command, store: &dyn KVEngineStoreTrait) -> String {
+        match command {
+            Command::Get { key } => match store.get(key) {
+                Some(value) => format!("VALUE {}\r\n", value),
+                None => "NOT_FOUND\r\n".to_string(),
+            },
+            Command::Set { key, value } => match store.set(key.clone(), value.clone()) {
+                Ok(_) => "OK\r\n".to_string(),
+                Err(e) => format!("ERROR {}\r\n", e),
+            },
+            Command::Delete { key } => {
+                store.delete(key); // Always return OK, regardless of whether key existed
+                "OK\r\n".to_string()
             }
         }
     }
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
+            // Convert received bytes to string
+            let request = std::str::from_utf8(&buffer[..n])?;
+            
+            match protocol.parse(request) {
+                Ok(command) => {
+                    // Update command statistics
+                    stats.increment_command_counter(&command);
+                    
+                    // Lock the storage for the duration of this command
+                    let mut store = store.lock().await;
+                    let response = match command.clone() {
+                        Command::Get { key } => {
+                            match store.get(&key) {
+                                Some(value) => format!("VALUE {}\r\n", value),
+                                None => "NOT_FOUND\r\n".to_string(),
+                            }
+                        }
+                        Command::Set { key, value } => {
+                            match store.set(key.clone(), value.clone()) {
+                                Ok(_) => "OK\r\n".to_string(),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Delete { key } => {
+                            store.delete(&key);
+                            "OK\r\n".to_string()
+                        }
+                        Command::Increment { key, amount } => {
+                            match store.increment(&key, amount) {
+                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Decrement { key, amount } => {
+                            match store.decrement(&key, amount) {
+                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Append { key, value } => {
+                            match store.append(&key, &value) {
+                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Prepend { key, value } => {
+                            match store.prepend(&key, &value) {
+                                Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::MultiGet { keys } => {
+                            let mut response = String::new();
+                            let mut found_count = 0;
+                            
+                            for key in keys {
+                                match store.get(&key) {
+                                    Some(value) => {
+                                        response.push_str(&format!("{} {}\r\n", key, value));
+                                        found_count += 1;
+                                    }
+                                    None => {
+                                        response.push_str(&format!("{} NOT_FOUND\r\n", key));
+                                    }
+                                }
+                            }
+                            
+                            if found_count > 0 {
+                                format!("VALUES {}\r\n{}", found_count, response)
+                            } else {
+                                "NOT_FOUND\r\n".to_string()
+                            }
+                        }
+                        Command::MultiSet { pairs } => {
+                            for (key, value) in pairs {
+                                if let Err(e) = store.set(key.clone(), value.clone()) {
+                                    return format!("ERROR {}\r\n", e);
+                                }
+                            }
+                            "OK\r\n".to_string()
+                        }
+                        Command::Truncate => {
+                            match store.truncate() {
+                                Ok(_) => "OK\r\n".to_string(),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Stats => {
+                            format!("STATS\r\n{}", stats.format_stats())
+                        }
+                        Command::Info => {
+                            let mut info = String::new();
+                            
+                            // Server version from Cargo.toml
+                            info.push_str(&format!("version:{}\r\n", env!("CARGO_PKG_VERSION")));
+                            
+                            // Server uptime
+                            info.push_str(&format!("uptime_seconds:{}\r\n", stats.uptime_seconds()));
+                            info.push_str(&format!("uptime:{}\r\n", stats.uptime_human()));
+                            
+                            // Current time
+                            let now = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or(Duration::from_secs(0))
+                                .as_secs();
+                            info.push_str(&format!("server_time_unix:{}\r\n", now));
+                            
+                            // Key count
+                            let key_count = store.count_keys().unwrap_or(0);
+                            info.push_str(&format!("db_keys:{}\r\n", key_count));
+                            
+                            format!("INFO\r\n{}", info)
+                        }
+                        Command::Ping => {
+                            "PONG\r\n".to_string()
+                        }
+                    };
+                    
+                    // Send response back to client
+                    if let Err(e) = socket.write_all(response.as_bytes()).await {
+                        error!("Error writing to client {}: {}", addr, e);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    // Send error response for invalid commands
+                    let error_msg = format!("ERROR {}\r\n", e);
+                    if let Err(e) = socket.write_all(error_msg.as_bytes()).await {
+                        error!("Error writing to client {}: {}", addr, e);
+                        break;
+                    }
+                }
+            }
+        }
 
-    Ok(())
+        Ok(())
+=======
+        Ok(())
+    }
+
+    /// Execute a command against the storage engine.
+    ///
+    /// This method takes a parsed command and executes it against the provided
+    /// storage engine, returning the appropriate response string.
+    ///
+    /// # Arguments
+    /// * `command` - The parsed command to execute
+    /// * `store` - Reference to the storage engine
+    ///
+    /// # Returns
+    /// * `String` - The response to send back to the client
+    fn execute_command(command: &Command, store: &dyn KVEngineStoreTrait) -> String {
+        match command {
+            Command::Get { key } => match store.get(key) {
+                Some(value) => format!("VALUE {}\r\n", value),
+                None => "NOT_FOUND\r\n".to_string(),
+            },
+            Command::Set { key, value } => match store.set(key.clone(), value.clone()) {
+                Ok(_) => "OK\r\n".to_string(),
+                Err(e) => format!("ERROR {}\r\n", e),
+            },
+            Command::Delete { key } => {
+                store.delete(key); // Always return OK, regardless of whether key existed
+                "OK\r\n".to_string()
+            }
+        }
+    }
+>>>>>>> 3a5027e4bbf6d2dff212dfc0260ad763e29b2813
 }

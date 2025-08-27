@@ -1,18 +1,20 @@
 //! # Storage Engine Module
 //!
 //! This module contains the storage components for MerkleKV:
-//! 
-//! - **`kv_engine`**: Core key-value storage engine (currently in-memory)
+//!
+//! - **`kv_trait`**: Common interface for all storage engines
+//! - **`rwlock_engine`**: Thread-safe in-memory storage using RwLock<HashMap>
+//! - **`kv_engine`**: Non-thread-safe in-memory storage using Arc<HashMap>
 //! - **`merkle`**: Merkle tree implementation for efficient synchronization
-//! 
+//!
 //! ## Design Philosophy
-//! 
-//! The storage layer is designed to be modular and replaceable. The current
-//! in-memory implementation serves as a prototype, but the interfaces are
-//! designed to support persistent storage engines in the future.
-//! 
+//!
+//! The storage layer is designed to be modular and replaceable. All storage engines
+//! implement the `KVEngineStoreTrait` interface, allowing easy swapping between
+//! different implementations without changing the rest of the codebase.
+//!
 //! ## Future Enhancements
-//! 
+//!
 //! - Replace in-memory storage with persistent engine (RocksDB, Sled, etc.)
 //! - Add Write-Ahead Logging (WAL) for durability
 //! - Implement compression and efficient serialization
@@ -20,4 +22,11 @@
 //! - Optimize Merkle tree for incremental updates
 
 pub mod kv_engine;
+pub mod kv_trait;
 pub mod merkle;
+pub mod rwlock_engine;
+
+// Re-export the trait and engines for convenience
+pub use kv_engine::KvEngine;
+pub use kv_trait::KVEngineStoreTrait;
+pub use rwlock_engine::RwLockEngine;

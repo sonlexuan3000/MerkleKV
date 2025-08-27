@@ -5,24 +5,24 @@
 //! eventual consistency across the cluster.
 //!
 //! ## Anti-Entropy Protocol
-//! 
+//!
 //! Anti-entropy is a technique used in distributed systems to repair inconsistencies:
 //! 1. **Periodic Sync**: Nodes periodically contact their peers
 //! 2. **Root Hash Comparison**: Compare Merkle tree root hashes
 //! 3. **Recursive Diff**: If different, recursively compare subtrees
 //! 4. **Delta Transfer**: Only transfer the differing key-value pairs
-//! 
+//!
 //! ## Current Implementation Status
-//! 
+//!
 //! **⚠️ This is a STUB implementation!**
-//! 
+//!
 //! The current code provides the basic structure but does not implement
 //! the actual synchronization logic. Key missing pieces:
 //! - Peer discovery mechanism
 //! - Network communication with peers
 //! - Merkle tree comparison algorithm
 //! - Delta computation and transfer
-//! 
+//!
 //! See the TODO comments throughout for specific implementation areas.
 
 use anyhow::Result;
@@ -31,43 +31,43 @@ use std::time::Duration;
 use tokio::time;
 
 use crate::config::Config;
-use crate::store::kv_engine::KvEngine;
 use crate::store::merkle::MerkleTree;
+use crate::store::KVEngineStoreTrait;
 
 /// Manages synchronization with peer nodes in the cluster.
-/// 
+///
 /// The SyncManager periodically contacts peer nodes to exchange Merkle tree
 /// information and synchronize any differences in their datasets.
 pub struct SyncManager {
     /// Local storage engine containing the key-value data
-    store: KvEngine,
-    
+    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
+
     /// Merkle tree representing the current state of the local dataset
     merkle_tree: MerkleTree,
-    
+
     /// List of peer node addresses to synchronize with
     /// TODO: Implement peer discovery instead of static configuration
     peer_nodes: Vec<String>,
-    
+
     /// How often to run the synchronization process
     sync_interval: Duration,
 }
 
 impl SyncManager {
     /// Create a new synchronization manager.
-    /// 
+    ///
     /// # Arguments
     /// * `config` - Server configuration containing sync settings
     /// * `store` - Local storage engine to keep synchronized
-    /// 
+    ///
     /// # Returns
     /// * `SyncManager` - New sync manager instance
-    /// 
+    ///
     /// # Current Behavior
     /// The peer list is currently empty regardless of configuration.
     /// In a real implementation, this would load peer addresses from
     /// configuration or implement a peer discovery mechanism.
-    pub fn new(config: &Config, store: KvEngine) -> Self {
+    pub fn new(config: &Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
         let peers = if config.replication.enabled {
             // TODO: Implement peer discovery or load from configuration
             // For example:
@@ -79,7 +79,7 @@ impl SyncManager {
         } else {
             vec![]
         };
-        
+
         Self {
             store,
             merkle_tree: MerkleTree::new(),
@@ -87,17 +87,17 @@ impl SyncManager {
             sync_interval: Duration::from_secs(config.sync_interval_seconds),
         }
     }
-    
+
     /// Start the periodic synchronization loop.
-    /// 
+    ///
     /// This method runs indefinitely, performing synchronization with all
     /// known peers at regular intervals. It should be run in a background task.
-    /// 
+    ///
     /// # Current Behavior
     /// Since the peer list is empty, this loop effectively does nothing except
     /// wait for the sync interval. When peers are added, it will attempt to
     /// synchronize with each one.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let mut sync_manager = SyncManager::new(&config, store);
@@ -107,15 +107,15 @@ impl SyncManager {
     /// ```
     pub async fn start_sync_loop(&mut self) {
         let mut interval = time::interval(self.sync_interval);
-        
+
         loop {
             interval.tick().await;
-            
+
             if self.peer_nodes.is_empty() {
                 // No peers configured, skip this sync round
                 continue;
             }
-            
+
             // Synchronize with each known peer
             for peer in &self.peer_nodes {
                 match self.sync_with_peer(peer).await {
@@ -129,18 +129,18 @@ impl SyncManager {
             }
         }
     }
-    
+
     /// Synchronize with a single peer node.
-    /// 
+    ///
     /// This method implements the core anti-entropy algorithm by comparing
     /// Merkle trees with a peer and exchanging any differences.
-    /// 
+    ///
     /// # Arguments
     /// * `_peer` - Address of the peer node to sync with
-    /// 
+    ///
     /// # Returns
     /// * `Result<()>` - Success if sync completed, error if communication failed
-    /// 
+    ///
     /// # Algorithm (when implemented)
     /// 1. Connect to the peer node
     /// 2. Exchange root hashes of Merkle trees
@@ -149,7 +149,7 @@ impl SyncManager {
     /// 5. Request missing/different key-value pairs from peer
     /// 6. Update local storage with received data
     /// 7. Optionally send our missing data to the peer (bidirectional sync)
-    /// 
+    ///
     /// # Current Status
     /// **STUB IMPLEMENTATION** - This method currently does nothing except log.
     /// A real implementation would need:
@@ -159,7 +159,7 @@ impl SyncManager {
     /// - Conflict resolution strategy
     async fn sync_with_peer(&self, _peer: &str) -> Result<()> {
         // TODO: Implement actual anti-entropy sync protocol
-        // 
+        //
         // Steps for implementation:
         // 1. Establish connection to peer (HTTP, gRPC, custom TCP, etc.)
         // 2. Exchange Merkle tree root hashes
@@ -167,7 +167,7 @@ impl SyncManager {
         // 4. Request only the different keys/values from the peer
         // 5. Update local store with received data
         // 6. Optionally update our Merkle tree if changes were made
-        // 
+        //
         // Example network calls:
         // let peer_root_hash = http_client.get_root_hash(peer).await?;
         // if peer_root_hash != self.merkle_tree.get_root_hash() {
@@ -177,22 +177,25 @@ impl SyncManager {
         //         self.store.set(key, value);
         //     }
         // }
-        
-        info!("Anti-entropy sync process would happen here with peer: {}", _peer);
-        
+
+        info!(
+            "Anti-entropy sync process would happen here with peer: {}",
+            _peer
+        );
+
         Ok(())
     }
-    
+
     /// Update the local Merkle tree to reflect current storage state.
-    /// 
+    ///
     /// This method rebuilds the Merkle tree from the current contents of
     /// the storage engine. It should be called after any changes to the
     /// local data that weren't made through the sync process.
-    /// 
+    ///
     /// # Performance Note
     /// This implementation rebuilds the entire tree, which is O(n log n).
     /// A production version should use incremental updates for efficiency.
-    /// 
+    ///
     /// # When to Call
     /// - After processing client write operations (SET, DELETE)
     /// - After receiving replication updates
@@ -203,7 +206,7 @@ impl SyncManager {
         // Instead of rebuilding everything, track which keys changed
         // and only update the affected parts of the tree
         self.merkle_tree = MerkleTree::new();
-        
+
         // Add all current key-value pairs to the tree
         // Note: This is a simplification - in reality we would need
         // consistent serialization of values to ensure deterministic hashes
@@ -219,22 +222,22 @@ impl SyncManager {
 mod tests {
     // TODO: Implement comprehensive tests for sync logic
     // When the actual implementation is added, tests should cover:
-    // 
+    //
     // 1. Sync with identical datasets (should be no-op)
-    // 2. Sync with completely different datasets  
+    // 2. Sync with completely different datasets
     // 3. Sync with partially overlapping datasets
     // 4. Handling of network failures during sync
     // 5. Concurrent sync operations
     // 6. Merkle tree update after local changes
-    // 
+    //
     // Example test structure:
     // #[tokio::test]
     // async fn test_sync_identical_datasets() {
     //     // Create two nodes with identical data
     //     // Verify sync completes quickly with no transfers
     // }
-    // 
-    // #[tokio::test] 
+    //
+    // #[tokio::test]
     // async fn test_sync_different_datasets() {
     //     // Create two nodes with different data
     //     // Run sync and verify both nodes converge to same state

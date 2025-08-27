@@ -47,7 +47,7 @@ jobs:
           echo "Server binary size:"
           ls -lh target/release/merkle_kv* || echo "No merkle_kv binary found"
           echo "All executables in release:"
-          find target/release -maxdepth 1 -type f -executable
+          find target/release -maxdepth 1 -type f -executable || ls -lh target/release/merklekv
 
       - name: Install Python dependencies
         run: |

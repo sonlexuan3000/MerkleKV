@@ -45,7 +45,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::config::Config;
-use crate::store::kv_engine::KvEngine;
+use crate::store::KVEngineStoreTrait;
 
 /// Represents a replication operation to be sent between nodes.
 /// 
@@ -245,7 +245,7 @@ impl Replicator {
     pub async fn start_replication_handler(
         &self,
         mut rx: mpsc::Receiver<ReplicationMessage>,
-        _store: KvEngine,
+        _store: Box<dyn KVEngineStoreTrait + Send + Sync>,
     ) {
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
