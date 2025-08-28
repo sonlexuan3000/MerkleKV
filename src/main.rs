@@ -33,6 +33,7 @@ mod replication; // MQTT-based replication (stub)
 mod server; // TCP server for client connections
 mod store; // Storage engine and Merkle tree
 mod sync; // Anti-entropy synchronization (stub)
+mod change_event; // Change event schema & codecs
 
 // Import storage engines
 use crate::store::{KVEngineStoreTrait, KvEngine, RwLockEngine};

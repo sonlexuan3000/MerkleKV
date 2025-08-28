@@ -40,6 +40,7 @@ use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::protocol::{Command, Protocol};
+use crate::replication::Replicator;
 
 /// Server statistics for monitoring and diagnostics.
 ///
@@ -277,6 +278,14 @@ impl Server {
         // Share server statistics across all connections
         let stats = Arc::new(self.stats.clone());
 
+        // Initialize replication if enabled
+        let replicator_opt: Option<Replicator> = if self.config.replication.enabled {
+            let r = Replicator::new(&self.config).await?;
+            // Start background apply loop
+            r.start_replication_handler(Arc::clone(&store)).await;
+            Some(r)
+        } else { None };
+
         // TODO: Add graceful shutdown handling
         // TODO: Add connection limits and rate limiting
 
@@ -294,8 +303,9 @@ impl Server {
                     stats_clone.active_connections.fetch_add(1, Ordering::Relaxed);
                     
                     // Spawn a new task for each client connection
+                    let repl_clone = replicator_opt.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone()).await {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone).await {
                             error!("Error handling connection from {}: {}", addr, e);
                         }
                         
@@ -340,9 +350,20 @@ impl Server {
         addr: SocketAddr,
         store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
         stats: Arc<ServerStats>,
+    replicator: Option<Replicator>,
     ) -> Result<()> {
         let mut buffer = [0; 1024];
         let protocol = Protocol::new();
+
+        // Local helper describing what to publish after the storage write.
+        enum Publish {
+            Set(String, String),
+            Delete(String),
+            Incr(String, i64),
+            Decr(String, i64),
+            Append(String, String),
+            Prepend(String, String),
+        }
 
         loop {
             // Read data from the client
@@ -367,59 +388,81 @@ impl Server {
                     // Update command statistics
                     stats.increment_command_counter(&command);
                     
-                    // Lock the storage for the duration of this command
-                    let store = store.lock().await;
+                    // Process the command. We avoid holding the store lock across awaits
+                    // by computing an optional publish action and performing it afterward.
+                    let mut publishes: Vec<Publish> = Vec::new();
                     let response = match command.clone() {
                         Command::Get { key } => {
+                            let store = store.lock().await;
                             match store.get(&key) {
                                 Some(value) => format!("VALUE {}\r\n", value),
                                 None => "NOT_FOUND\r\n".to_string(),
                             }
                         }
                         Command::Set { key, value } => {
+                            let store = store.lock().await;
                             match store.set(key.clone(), value.clone()) {
-                                Ok(_) => "OK\r\n".to_string(),
+                                Ok(_) => {
+                                    publishes.push(Publish::Set(key.clone(), value.clone()));
+                                    "OK\r\n".to_string()
+                                }
                                 Err(e) => format!("ERROR {}\r\n", e),
                             }
                         }
                         Command::Delete { key } => {
-                            store.delete(&key);
+                            {
+                                let store = store.lock().await;
+                                store.delete(&key);
+                            }
+                            publishes.push(Publish::Delete(key.clone()));
                             "OK\r\n".to_string()
                         }
                         Command::Increment { key, amount } => {
                             // Check if the key already exists
-                            let exists = store.get(&key).is_some();
+                            let exists = { let store = store.lock().await; store.get(&key).is_some() };
                             
                             // If the key doesn't exist, create it with value 1 or the specified amount
                             if !exists {
                                 let value = amount.unwrap_or(1).to_string();
-                                match store.set(key.clone(), value.clone()) {
-                                    Ok(_) => format!("VALUE {}\r\n", value),
-                                    Err(e) => format!("ERROR {}\r\n", e),
+                                {
+                                    let store = store.lock().await;
+                                    match store.set(key.clone(), value.clone()) {
+                                        Ok(_) => {
+                                            let nv = value.parse().unwrap_or(1);
+                                            publishes.push(Publish::Incr(key.clone(), nv));
+                                            format!("VALUE {}\r\n", value)
+                                        }
+                                        Err(e) => format!("ERROR {}\r\n", e),
+                                    }
                                 }
                             } else {
                                 // Otherwise, increment the existing value
-                                match store.increment(&key, amount) {
-                                    Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                let res = { let store = store.lock().await; store.increment(&key, amount) };
+                                match res {
+                                    Ok(new_value) => { publishes.push(Publish::Incr(key.clone(), new_value)); format!("VALUE {}\r\n", new_value) },
                                     Err(e) => format!("ERROR {}\r\n", e),
                                 }
                             }
                         }
                         Command::Decrement { key, amount } => {
                             // Check if the key already exists
-                            let exists = store.get(&key).is_some();
+                            let exists = { let store = store.lock().await; store.get(&key).is_some() };
                             
                             // If the key doesn't exist, create it with value -1 or the negative of the specified amount
                             if !exists {
                                 let value = (-(amount.unwrap_or(1))).to_string();
-                                match store.set(key.clone(), value.clone()) {
-                                    Ok(_) => format!("VALUE {}\r\n", value),
-                                    Err(e) => format!("ERROR {}\r\n", e),
+                                {
+                                    let store = store.lock().await;
+                                    match store.set(key.clone(), value.clone()) {
+                                        Ok(_) => { let v: i64 = value.parse().unwrap_or(-1); publishes.push(Publish::Decr(key.clone(), v)); format!("VALUE {}\r\n", value) },
+                                        Err(e) => format!("ERROR {}\r\n", e),
+                                    }
                                 }
                             } else {
                                 // Otherwise, decrement the existing value
-                                match store.decrement(&key, amount) {
-                                    Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                let res = { let store = store.lock().await; store.decrement(&key, amount) };
+                                match res {
+                                    Ok(new_value) => { publishes.push(Publish::Decr(key.clone(), new_value)); format!("VALUE {}\r\n", new_value) },
                                     Err(e) => format!("ERROR {}\r\n", e),
                                 }
                             }
@@ -427,24 +470,27 @@ impl Server {
                         Command::Append { key, value } => {
                             // Handle empty values for APPEND
                             if value.is_empty() {
+                                let store = store.lock().await;
                                 match store.get(&key) {
                                     Some(current_value) => format!("VALUE {}\r\n", current_value),
                                     None => "ERROR Key not found\r\n".to_string(),
                                 }
                             } else {
                                 // Try to get the key first
-                                let current_value = store.get(&key);
+                                let current_value = { let store = store.lock().await; store.get(&key) };
                                 
                                 // If the key doesn't exist, create it with the value
                                 if current_value.is_none() {
-                                    match store.set(key.clone(), value.clone()) {
-                                        Ok(_) => format!("VALUE {}\r\n", value),
+                                    let res = { let store = store.lock().await; store.set(key.clone(), value.clone()) };
+                                    match res {
+                                        Ok(_) => { publishes.push(Publish::Append(key.clone(), value.clone())); format!("VALUE {}\r\n", value) },
                                         Err(e) => format!("ERROR {}\r\n", e),
                                     }
                                 } else {
                                     // Otherwise, append to the existing value
-                                    match store.append(&key, &value) {
-                                        Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                    let res = { let store = store.lock().await; store.append(&key, &value) };
+                                    match res {
+                                        Ok(new_value) => { publishes.push(Publish::Append(key.clone(), new_value.clone())); format!("VALUE {}\r\n", new_value) },
                                         Err(e) => format!("ERROR {}\r\n", e),
                                     }
                                 }
@@ -453,30 +499,34 @@ impl Server {
                         Command::Prepend { key, value } => {
                             // Handle empty values for PREPEND
                             if value.is_empty() {
+                                let store = store.lock().await;
                                 match store.get(&key) {
                                     Some(current_value) => format!("VALUE {}\r\n", current_value),
                                     None => "ERROR Key not found\r\n".to_string(),
                                 }
                             } else {
                                 // Try to get the key first
-                                let current_value = store.get(&key);
+                                let current_value = { let store = store.lock().await; store.get(&key) };
                                 
                                 // If the key doesn't exist, create it with the value
                                 if current_value.is_none() {
-                                    match store.set(key.clone(), value.clone()) {
-                                        Ok(_) => format!("VALUE {}\r\n", value),
+                                    let res = { let store = store.lock().await; store.set(key.clone(), value.clone()) };
+                                    match res {
+                                        Ok(_) => { publishes.push(Publish::Prepend(key.clone(), value.clone())); format!("VALUE {}\r\n", value) },
                                         Err(e) => format!("ERROR {}\r\n", e),
                                     }
                                 } else {
                                     // Otherwise, prepend to the existing value
-                                    match store.prepend(&key, &value) {
-                                        Ok(new_value) => format!("VALUE {}\r\n", new_value),
+                                    let res = { let store = store.lock().await; store.prepend(&key, &value) };
+                                    match res {
+                                        Ok(new_value) => { publishes.push(Publish::Prepend(key.clone(), new_value.clone())); format!("VALUE {}\r\n", new_value) },
                                         Err(e) => format!("ERROR {}\r\n", e),
                                     }
                                 }
                             }
                         }
                         Command::MultiGet { keys } => {
+                            let store = store.lock().await;
                             let mut response = String::new();
                             let mut found_count = 0;
                             
@@ -501,15 +551,18 @@ impl Server {
                         Command::MultiSet { pairs } => {
                             let mut result = "OK\r\n".to_string();
                             for (key, value) in pairs {
-                                if let Err(e) = store.set(key.clone(), value.clone()) {
+                                let res = { let store = store.lock().await; store.set(key.clone(), value.clone()) };
+                                if let Err(e) = res {
                                     result = format!("ERROR {}\r\n", e);
                                     break;
                                 }
+                                publishes.push(Publish::Set(key.clone(), value.clone()));
                             }
                             result
                         }
                         Command::Truncate => {
-                            match store.truncate() {
+                            let res = { let store = store.lock().await; store.truncate() };
+                            match res {
                                 Ok(_) => "OK\r\n".to_string(),
                                 Err(e) => format!("ERROR {}\r\n", e),
                             }
@@ -535,7 +588,7 @@ impl Server {
                             info.push_str(&format!("server_time_unix:{}\r\n", now));
                             
                             // Key count
-                            let key_count = store.count_keys().unwrap_or(0);
+                            let key_count = { let store = store.lock().await; store.count_keys().unwrap_or(0) };
                             info.push_str(&format!("db_keys:{}\r\n", key_count));
                             
                             format!("INFO\r\n{}", info)
@@ -549,7 +602,8 @@ impl Server {
                         }
                         Command::Flush => {
                             // Force sync to disk if the storage engine supports it
-                            match store.sync() {
+                            let res = { let store = store.lock().await; store.sync() };
+                            match res {
                                 Ok(_) => "OK\r\n".to_string(),
                                 Err(e) => format!("ERROR {}\r\n", e),
                             }
@@ -570,6 +624,19 @@ impl Server {
                             std::process::exit(0);
                         }
                     };
+                    // Perform publishes after the store operations (lock released)
+                    if let Some(r) = &replicator {
+                        for p in publishes {
+                            match p {
+                                Publish::Set(k, v) => { let _ = r.publish_set(&k, &v).await; }
+                                Publish::Delete(k) => { let _ = r.publish_delete(&k).await; }
+                                Publish::Incr(k, nv) => { let _ = r.publish_incr(&k, nv).await; }
+                                Publish::Decr(k, nv) => { let _ = r.publish_decr(&k, nv).await; }
+                                Publish::Append(k, nv) => { let _ = r.publish_append(&k, &nv).await; }
+                                Publish::Prepend(k, nv) => { let _ = r.publish_prepend(&k, &nv).await; }
+                            }
+                        }
+                    }
                     
                     // Send response back to client
                     if let Err(e) = socket.write_all(response.as_bytes()).await {
