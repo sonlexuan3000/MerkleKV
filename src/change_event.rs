@@ -416,7 +416,7 @@ fn self_origin_event_ignored() {
 fn ttl_is_advisory_only() {
     let mut a = LocalApplier::new();
     let mut ev = sample_event(OpKind::Set, "ttl", Some("x"), 50);
-    // Thêm TTL ≠ auto-expire (theo prototype)
+    // Adding TTL does not mean auto-expire (according to the prototype)
     ev.ttl = Some(1);
     a.apply(&ev);
     assert_eq!(a.store.get("ttl").cloned(), Some("x".into()));
