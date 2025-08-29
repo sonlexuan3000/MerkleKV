@@ -347,11 +347,7 @@ fn same_timestamp_tie_break_by_op_id() {
 #[test]
 fn per_key_ts_isolation() {
     let mut a = LocalApplier::new();
-    // key x có ts thấp hơn nhưng không ảnh hưởng key y
-    a.apply(&sample_event(OpKind::Set, "x", Some("1"), 5));
-    a.apply(&sample_event(OpKind::Set, "y", Some("9"), 100));
-    a.apply(&sample_event(OpKind::Set, "x", Some("2"), 6)); // hợp lệ
-    // Nếu áp sai, ts của y có thể vô tình chặn x
+    // If applied incorrectly, the timestamp of y could accidentally block x
     assert_eq!(a.store.get("x").cloned(), Some("2".into()));
     assert_eq!(a.store.get("y").cloned(), Some("9".into()));
 }
