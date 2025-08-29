@@ -376,7 +376,7 @@ fn large_payload_roundtrip() {
 #[test]
 fn append_prepend_store_result_value() {
     let mut a = LocalApplier::new();
-    // Giả định server đã tính sẵn kết quả và nhét vào val
+    // Assume the server has already computed the result and put it into val
     a.apply(&sample_event(OpKind::Set, "s", Some("core"), 1));
     a.apply(&sample_event(OpKind::Append, "s", Some("core+tail"), 2));
     assert_eq!(a.store.get("s").cloned(), Some("core+tail".into()));
