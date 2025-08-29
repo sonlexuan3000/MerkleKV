@@ -337,7 +337,7 @@ fn same_timestamp_tie_break_by_op_id() {
     let mut applier = LocalApplier::new();
     let mut ev1 = sample_event(OpKind::Set, "tie", Some("A"), 500);
     let mut ev2 = sample_event(OpKind::Set, "tie", Some("B"), 500);
-    // định nghĩa: chọn sự kiện có op_id lexicographically larger
+    // Definition: choose the event with the lexicographically larger op_id
     let winner_is_ev2 = ev2.op_id > ev1.op_id;
     applier.apply(&ev1);
     applier.apply(&ev2);
