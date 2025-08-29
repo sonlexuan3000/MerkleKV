@@ -406,8 +406,8 @@ fn replay_without_dedupe_still_lww_correct() {
 }
 #[test]
 fn self_origin_event_ignored() {
-    // LocalApplier không có src check, nhưng Subscriber thật phải có.
-    // Ở đây mô phỏng bằng cách xác nhận business rule:
+    // LocalApplier does not check src, but a real Subscriber must.
+    // Here we simulate by verifying the business rule:
     let ev = ChangeEvent::with_str_value(1, OpKind::Set, "self", Some("v"), 10, "nodeA", None, None);
     assert_eq!(ev.src, "nodeA");
     // Gợi ý: test này nên nằm trong test của Subscriber thực tế, nơi có node_id local.
