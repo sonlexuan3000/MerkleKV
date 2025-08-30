@@ -180,6 +180,21 @@ impl KVEngineStoreTrait for RwLockEngine {
         let data = self.data.read().unwrap();
         data.len()
     }
+    fn scan(&self, prefix: &str) -> Vec<String> {
+        // Nhiều thread có thể cùng đọc: dùng shared read-lock
+        let data = self.data.read().unwrap();
+
+        if prefix.is_empty() {
+            // Trả tất cả key nếu prefix rỗng
+            return data.keys().cloned().collect();
+        }
+
+        // Lọc theo tiền tố
+        data.keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
 
     /// Check if the store is empty.
     ///
