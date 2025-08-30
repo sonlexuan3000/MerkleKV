@@ -41,9 +41,12 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
 - **Memory Efficiency**: Optimized data structures and zero-copy operations where possible
 
 ### 🔄 Replication & Consistency
-- **Fast Replication**: Updates are immediately published to an MQTT topic and broadcast to all peer nodes
+- **Real-time Replication**: Updates are immediately published via MQTT and broadcast to all peer nodes with 3-5 second latency
+- **MQTT-based Distribution**: Uses public or private MQTT brokers for reliable message transport
 - **Eventually Consistent**: Guarantees that all nodes will converge to the same state
 - **Self-Healing**: The anti-entropy mechanism runs periodically to automatically find and fix any data drift between replicas
+- **Loop Prevention**: Nodes intelligently ignore their own messages to prevent infinite replication loops
+- **Bi-directional Sync**: All nodes can both send and receive updates in a peer-to-peer architecture
 
 ### 🛡️ Reliability & Safety
 - **Memory Safety**: Guarantees provided by the Rust compiler prevent common bugs like null pointer dereferencing and data races
@@ -71,7 +74,22 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
 
 ## � Recent Improvements
 
-### Latest Enhancements (v1.0.0)
+### Latest Enhancements (v1.1.0)
+
+**🔄 Real-time Replication System**
+- Implemented complete MQTT-based replication infrastructure using rumqttc client
+- Added support for all write operations: SET, DELETE, INCR, DECR, APPEND, PREPEND
+- Created CBOR binary encoding for efficient on-wire message format
+- Implemented Last-Write-Wins (LWW) conflict resolution with timestamp ordering
+- Added idempotency protection and loop prevention mechanisms
+- Verified bi-directional replication with 3-5 second latency on public MQTT brokers
+
+**🧪 Comprehensive Replication Testing**
+- Developed full Python-based integration test suite for replication functionality
+- Added MQTT connectivity validation with test.mosquitto.org public broker
+- Created interactive demonstration scripts showcasing real-time synchronization
+- Implemented automated test runner with multiple execution modes
+- Added comprehensive documentation for replication testing procedures
 
 **🔧 Enhanced Protocol Support**
 - Added numeric operations: `INCR` and `DECR` commands with custom amounts
@@ -1198,6 +1216,58 @@ exec 3<&-
 exec 3>&-
 ```
 
+### Replication Demonstration
+
+MerkleKV includes a comprehensive replication testing suite that demonstrates real-time synchronization between nodes.
+
+#### Quick Replication Test
+```bash
+# Navigate to test directory
+cd tests/integration
+
+# Run simple replication verification
+python run_replication_tests.py simple
+
+# Expected output:
+# 🧪 Running simple replication test...
+# ✅ MQTT broker connectivity: PASSED
+# ✅ Basic replication: PASSED
+# ✅ All tests completed successfully!
+```
+
+#### Interactive Replication Demo
+```bash
+# Run interactive demonstration
+python demo_replication.py
+
+# Expected output:
+# 🔥 MerkleKV Replication Demo
+# 🚀 Starting Node 1 (Port 7600)...
+# 🚀 Starting Node 2 (Port 7601)...
+# ✅ Node 1 ready
+# ✅ Node 2 ready
+# 
+# 📝 Demo 1: Basic SET operation replication
+# → Setting 'user:alice' = 'Alice Johnson' on Node 1...
+# → Waiting for replication (3 seconds)...
+# → Getting 'user:alice' from Node 2...
+# ✅ Replication successful!
+```
+
+#### Multi-Node Cluster Replication
+```bash
+# Test comprehensive replication scenarios
+python run_replication_tests.py all
+
+# Includes tests for:
+# - SET/DELETE operation replication
+# - Numeric operations (INCR/DECR) sync
+# - String operations (APPEND/PREPEND) sync
+# - Concurrent operations handling
+# - Loop prevention validation
+# - Malformed message handling
+```
+
 ### Error Handling
 
 Common error responses:
@@ -1456,20 +1526,25 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive status
   - ✅ Handle edge cases and malformed input gracefully
   - ✅ Enhance error message clarity and consistency
 
-### Phase 3: Distributed System Core 🔄 IN PROGRESS
+### Phase 3: Distributed System Core ✅ COMPLETED
 **Priority: High** - Replication and consistency
 
-- [ ] **Issue #6: MQTT Integration**
-  - Integrate MQTT client library (rumqttmqtt or similar)
-  - Implement connection management and reconnection logic
-  - Create message publishing for local changes
-  - Add subscription handling for remote updates
+- [x] **Issue #6: MQTT Integration** ✅
+  - ✅ Integrated MQTT client library (rumqttc) for robust connectivity
+  - ✅ Implemented connection management with automatic reconnection logic
+  - ✅ Created message publishing system for local write operations
+  - ✅ Added subscription handling for remote updates from other nodes
+  - ✅ Implemented MQTT event loop with proper error handling
+  - ✅ Added support for public MQTT brokers (test.mosquitto.org)
 
-- [ ] **Issue #7: Replication Module**
-  - Design change event format and serialization
-  - Implement change publishing on local operations
-  - Add remote change application logic
-  - Handle basic conflict resolution (last-write-wins)
+- [x] **Issue #7: Replication Module** ✅
+  - ✅ Designed comprehensive ChangeEvent format with CBOR serialization
+  - ✅ Implemented real-time change publishing for all write operations (SET, DELETE, INCR, DECR, APPEND, PREPEND)
+  - ✅ Added remote change application logic with idempotency protection
+  - ✅ Implemented Last-Write-Wins (LWW) conflict resolution strategy
+  - ✅ Added loop prevention mechanism to avoid processing own messages
+  - ✅ Created comprehensive Python test suite for replication validation
+  - ✅ Verified bi-directional replication functionality with 3-5s latency
 
 - [ ] **Issue #8: Anti-Entropy Mechanism**
   - Implement periodic peer discovery and selection
@@ -1535,6 +1610,14 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive status
   - ✅ Concurrency and load testing
   - ✅ Protocol compliance verification
   - ✅ Performance benchmarking
+
+- [x] **Replication Testing Infrastructure** ✅
+  - ✅ MQTT connectivity validation with public brokers
+  - ✅ Real-time replication testing between multiple nodes
+  - ✅ Bi-directional synchronization verification
+  - ✅ Loop prevention and idempotency testing
+  - ✅ Interactive demonstration scripts for replication
+  - ✅ Comprehensive test documentation and procedures
 
 - [x] **Development Tools** ✅
   - ✅ Automated test runner with multiple modes
