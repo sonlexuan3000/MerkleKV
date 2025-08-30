@@ -494,17 +494,8 @@ impl KVEngineStoreTrait for KvEngine {
             
             Ok(new_value)
         } else {
-            // Key doesn't exist, create it with the value
-            new_data.insert(key.to_string(), value.to_string());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
-            Ok(value.to_string())
+            // Key doesn't exist, return error as per trait documentation
+            Err(anyhow::anyhow!("Key '{}' does not exist", key))
         }
     }
     
@@ -537,17 +528,8 @@ impl KVEngineStoreTrait for KvEngine {
             
             Ok(new_value)
         } else {
-            // Key doesn't exist, create it with the value
-            new_data.insert(key.to_string(), value.to_string());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
-            Ok(value.to_string())
+            // Key doesn't exist, return error as per trait documentation
+            Err(anyhow::anyhow!("Key '{}' does not exist", key))
         }
     }
     
