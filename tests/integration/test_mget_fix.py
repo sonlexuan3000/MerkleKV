@@ -6,15 +6,10 @@ This script tests that the MGET command correctly handles lowercase input
 and doesn't include the command name in the response.
 """
 
-import socket
+import pytest
+from conftest import connect_to_server
 
-def connect_to_server():
-    """Connect to the MerkleKV server."""
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(('127.0.0.1', 7379))
-    return client
-
-def test_mget_lowercase():
+def test_mget_lowercase(server):
     """Test MGET command with lowercase input."""
     print("Testing lowercase 'mget' command...")
     client = connect_to_server()
@@ -51,12 +46,3 @@ def test_mget_lowercase():
     print(f"MGET response: {response}")
     
     client.close()
-
-def main():
-    """Run the test."""
-    print("Starting MGET fix test...")
-    test_mget_lowercase()
-    print("\nTest completed!")
-
-if __name__ == "__main__":
-    main()

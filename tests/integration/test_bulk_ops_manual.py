@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 """
-Manual test script for bulk operations in MerkleKV.
-
-This script tests the bulk operations functionality:
+Manual test script for bulk operations    client.close()This script tests the bulk operations functionality:
 - MGET - Get multiple keys in one command
 - MSET - Set multiple key-value pairs
 - TRUNCATE - Clear all keys/values in the store
 """
 
-import socket
-import time
+import pytest
+from conftest import connect_to_server
 
-def connect_to_server():
-    """Connect to the MerkleKV server."""
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(('127.0.0.1', 7379))
-    return client
-
-def test_mset():
+def test_mset(server):
     """Test MSET command."""
     print("Testing MSET...")
     client = connect_to_server()
@@ -42,7 +34,7 @@ def test_mset():
     
     client.close()
 
-def test_mget():
+def test_mget(server):
     """Test MGET command."""
     print("\nTesting MGET...")
     client = connect_to_server()
@@ -54,7 +46,7 @@ def test_mget():
     
     client.close()
 
-def test_truncate():
+def test_truncate(server):
     """Test TRUNCATE command."""
     print("\nTesting TRUNCATE...")
     client = connect_to_server()
