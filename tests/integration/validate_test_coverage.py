@@ -31,7 +31,8 @@ def main():
             "test_numeric_operations.py", 
             "test_bulk_operations.py",
             "test_bulk_ops_manual.py",
-            "test_mget_fix.py"
+            "test_mget_fix.py",
+            "test_storage_persistence.py"
         ],
         "Advanced Features": [
             "test_concurrency.py",
