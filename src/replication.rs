@@ -38,39 +38,22 @@
 //! - Conflict resolution for concurrent writes
 
 use anyhow::Result;
-use log::{error, info};
-use rumqttc::{AsyncClient, MqttOptions, QoS};
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use tokio::sync::mpsc;
+use log::{error, info, warn};
+use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::{broadcast, Mutex};
+use std::sync::Arc;
 
 use crate::config::Config;
 use crate::store::KVEngineStoreTrait;
-
-/// Represents a replication operation to be sent between nodes.
-/// 
-/// This message format is published to MQTT when write operations
-/// occur locally, allowing other nodes to replicate the changes.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ReplicationMessage {
-    /// The type of operation: "SET" or "DELETE"
-    pub operation: String,
-    
-    /// The key being operated on
-    pub key: String,
-    
-    /// The value for SET operations, None for DELETE operations
-    pub value: Option<String>,
-    
-    /// Identifier of the node that originated this operation
-    /// Used to prevent infinite loops when nodes receive their own messages
-    pub source_node: String,
-}
+use crate::change_event::{ChangeCodec, ChangeEvent, OpKind};
 
 /// Handles MQTT-based replication of write operations.
 /// 
 /// The Replicator connects to an MQTT broker and provides methods to
 /// publish local write operations and handle incoming replication messages.
+#[derive(Clone)]
 pub struct Replicator {
     /// MQTT client for publishing and receiving messages
     client: AsyncClient,
@@ -80,6 +63,12 @@ pub struct Replicator {
     
     /// Unique identifier for this node
     node_id: String,
+
+    /// Preferred codec for on-wire messages
+    codec: ChangeCodec,
+
+    /// Channel carrying decoded ChangeEvents from the MQTT eventloop
+    tx: broadcast::Sender<ChangeEvent>,
 }
 
 impl Replicator {
@@ -108,31 +97,31 @@ impl Replicator {
         );
         mqtt_options.set_keep_alive(Duration::from_secs(30));
         
-        // Create MQTT client and event loop
-        let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
+    // Create MQTT client and event loop
+    let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
         
         // Subscribe to the replication topic pattern
         let topic = format!("{}/events/#", config.replication.topic_prefix);
         client.subscribe(&topic, QoS::AtLeastOnce).await?;
-        
-        // Handle received messages in a background task
-        // TODO: Integrate this with the storage engine to apply received operations
+
+        // Create broadcast channel and spawn the MQTT poller
+        let (tx, _rx_unused) = broadcast::channel::<ChangeEvent>(1024);
+        let tx_clone = tx.clone();
         tokio::spawn(async move {
             loop {
                 match eventloop.poll().await {
-                    Ok(notification) => {
-                        info!("Received MQTT notification: {:?}", notification);
-                        // TODO: Parse incoming replication messages and apply to storage
-                        // 1. Extract ReplicationMessage from MQTT payload
-                        // 2. Check if source_node != our node_id (avoid loops)
-                        // 3. Apply operation to local storage engine
-                        // 4. Update Merkle tree if needed
+                    Ok(Event::Incoming(Incoming::Publish(p))) => {
+                        match ChangeEvent::decode_any(&p.payload) {
+                            Ok(ev) => {
+                                let _ = tx_clone.send(ev); // ignore errors if no receivers
+                            }
+                            Err(e) => warn!("Failed to decode ChangeEvent: {}", e),
+                        }
                     }
+                    Ok(_) => {}
                     Err(e) => {
                         error!("MQTT eventloop error: {}", e);
-                        // TODO: Implement proper reconnection logic
-                        // For now, just wait and continue
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        tokio::time::sleep(Duration::from_secs(3)).await;
                     }
                 }
             }
@@ -142,6 +131,8 @@ impl Replicator {
             client,
             topic_prefix: config.replication.topic_prefix.clone(),
             node_id: config.replication.client_id.clone(),
+            codec: ChangeCodec::Cbor,
+            tx,
         })
     }
     
@@ -166,18 +157,9 @@ impl Replicator {
     /// }
     /// ```
     pub async fn publish_set(&self, key: &str, value: &str) -> Result<()> {
-        let message = ReplicationMessage {
-            operation: "SET".to_string(),
-            key: key.to_string(),
-            value: Some(value.to_string()),
-            source_node: self.node_id.clone(),
-        };
-        
-        let topic = format!("{}/events", self.topic_prefix);
-        let payload = serde_json::to_string(&message)?;
-        
-        self.client.publish(&topic, QoS::AtLeastOnce, false, payload).await?;
-        Ok(())
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+        let ev = ChangeEvent::with_str_value(1, OpKind::Set, key, Some(value), ts, self.node_id.clone(), None, None);
+        self.publish_event(ev).await
     }
     
     /// Publish a DELETE operation to other nodes.
@@ -200,74 +182,100 @@ impl Replicator {
     /// }
     /// ```
     pub async fn publish_delete(&self, key: &str) -> Result<()> {
-        let message = ReplicationMessage {
-            operation: "DELETE".to_string(),
-            key: key.to_string(),
-            value: None,
-            source_node: self.node_id.clone(),
-        };
-        
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+        let ev = ChangeEvent::with_str_value(1, OpKind::Del, key, None, ts, self.node_id.clone(), None, None);
+        self.publish_event(ev).await
+    }
+
+    /// Publish an INCR with resulting numeric value.
+    pub async fn publish_incr(&self, key: &str, new_value: i64) -> Result<()> {
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+        let ev = ChangeEvent::with_str_value(1, OpKind::Incr, key, Some(&new_value.to_string()), ts, self.node_id.clone(), None, None);
+        self.publish_event(ev).await
+    }
+
+    /// Publish a DECR with resulting numeric value.
+    pub async fn publish_decr(&self, key: &str, new_value: i64) -> Result<()> {
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+        let ev = ChangeEvent::with_str_value(1, OpKind::Decr, key, Some(&new_value.to_string()), ts, self.node_id.clone(), None, None);
+        self.publish_event(ev).await
+    }
+
+    /// Publish an APPEND with resulting value.
+    pub async fn publish_append(&self, key: &str, new_value: &str) -> Result<()> {
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+        let ev = ChangeEvent::with_str_value(1, OpKind::Append, key, Some(new_value), ts, self.node_id.clone(), None, None);
+        self.publish_event(ev).await
+    }
+
+    /// Publish a PREPEND with resulting value.
+    pub async fn publish_prepend(&self, key: &str, new_value: &str) -> Result<()> {
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+        let ev = ChangeEvent::with_str_value(1, OpKind::Prepend, key, Some(new_value), ts, self.node_id.clone(), None, None);
+        self.publish_event(ev).await
+    }
+
+    /// Serialize and publish a change event to MQTT with QoS 1 (at-least-once).
+    async fn publish_event(&self, ev: ChangeEvent) -> Result<()> {
         let topic = format!("{}/events", self.topic_prefix);
-        let payload = serde_json::to_string(&message)?;
-        
-        self.client.publish(&topic, QoS::AtLeastOnce, false, payload).await?;
+        let payload = self.codec.encode(&ev).map_err(|e| anyhow::anyhow!(e))?;
+        self.client
+            .publish(&topic, QoS::AtLeastOnce, false, payload)
+            .await?;
         Ok(())
     }
     
-    /// Start a background task to handle incoming replication messages.
-    /// 
-    /// This method processes messages received through a channel and applies
-    /// them to the local storage engine. It's designed to work with the
-    /// MQTT message handler.
-    /// 
-    /// # Arguments
-    /// * `rx` - Channel receiver for incoming replication messages
-    /// * `_store` - Storage engine to apply operations to (currently unused)
-    /// 
-    /// # Current Status
-    /// This is a stub implementation that only logs received messages.
-    /// A real implementation would apply the operations to storage.
-    /// 
-    /// # TODO: Complete Implementation
-    /// ```rust
-    /// match message.operation.as_str() {
-    ///     "SET" => {
-    ///         if let Some(value) = &message.value {
-    ///             store.set(message.key, value.clone());
-    ///         }
-    ///     }
-    ///     "DELETE" => {
-    ///         store.delete(&message.key);
-    ///     }
-    ///     _ => error!("Unknown operation: {}", message.operation),
-    /// }
-    /// ```
-    pub async fn start_replication_handler(
-        &self,
-        mut rx: mpsc::Receiver<ReplicationMessage>,
-        _store: Box<dyn KVEngineStoreTrait + Send + Sync>,
-    ) {
+    /// Start background tasks for (1) forwarding MQTT publish packets into a
+    /// channel, and (2) applying them to local storage with idempotency and LWW.
+    ///
+    /// Teaching note: We separate transport concerns (MQTT event loop) from
+    /// application concerns (idempotent LWW apply) with a channel. This models
+    /// the classic “ingress queue” in replicated systems.
+    pub async fn start_replication_handler(&self, store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>) {
+        // Subscribe to broadcasted events from the MQTT poller
+        let mut rx = self.tx.subscribe();
+        let node_id = self.node_id.clone();
         tokio::spawn(async move {
-            while let Some(message) = rx.recv().await {
-                match message.operation.as_str() {
-                    "SET" => {
-                        if let Some(value) = &message.value {
-                            // TODO: Apply SET operation to storage engine
-                            // Avoid loops by checking if we're the source
-                            info!(
-                                "Replication: SET {} = {} from {}",
-                                message.key, value, message.source_node
-                            );
-                        }
+            let mut seen: HashSet<[u8; 16]> = HashSet::new();
+            let mut last_ts: HashMap<String, u64> = HashMap::new();
+            loop {
+                let ev = match rx.recv().await {
+                    Ok(ev) => ev,
+                    Err(e) => {
+                        warn!("Replication handler receive error: {}", e);
+                        continue;
                     }
-                    "DELETE" => {
-                        // TODO: Apply DELETE operation to storage engine
-                        info!("Replication: DELETE {} from {}", message.key, message.source_node);
+                };
+                if ev.src == node_id { continue; } // loop prevention
+                if seen.contains(&ev.op_id) { continue; } // idempotency
+                let current_ts = last_ts.get(&ev.key).cloned().unwrap_or(0);
+                if ev.ts < current_ts { continue; } // LWW
+
+                let mut guard = store.lock().await;
+                match ev.op {
+                    OpKind::Del => {
+                        guard.delete(&ev.key);
                     }
                     _ => {
-                        error!("Unknown replication operation: {}", message.operation);
+                        if let Some(bytes) = ev.val.clone() {
+                            // Interpret as UTF-8 if possible, otherwise store base64 string
+                            let value = String::from_utf8(bytes.clone())
+                                .unwrap_or_else(|_| base64::encode(bytes));
+                            // We apply by writing the resulting value (idempotent)
+                            if let Err(e) = guard.set(ev.key.clone(), value) {
+                                warn!("Failed to apply event to store: {}", e);
+                            }
+                        }
                     }
                 }
+                // Update LWW state and dedupe set
+                last_ts.insert(ev.key.clone(), ev.ts);
+                seen.insert(ev.op_id);
+
+                // TODO: Update Merkle tree – in this prototype the store engines
+                // are in-memory maps without an exposed Merkle instance. The
+                // anti-entropy module rebuilds as needed. A production design
+                // would invoke an incremental Merkle update here.
             }
         });
     }
