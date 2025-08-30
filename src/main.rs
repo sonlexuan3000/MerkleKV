@@ -139,7 +139,7 @@ fn main() -> Result<()> {
             }
             _ => {
                 eprintln!("Error: Unknown engine type '{}'", config.engine);
-                eprintln!("Available engines: rwlock, kv");
+                eprintln!("Available engines: rwlock, kv, sled");
                 std::process::exit(1);
             }
         };

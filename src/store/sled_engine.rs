@@ -49,7 +49,7 @@ impl KVEngineStoreTrait for SledEngine {
     }
 
     fn len(&self) -> usize {
-        self.keys().len()
+        self.tree.len()
     }
 
     fn is_empty(&self) -> bool {
@@ -105,8 +105,7 @@ impl KVEngineStoreTrait for SledEngine {
     }
 
     fn count_keys(&self) -> Result<u64> {
-        let cnt = self.keys().len() as u64;
-        Ok(cnt)
+        Ok(self.tree.len() as u64)
     }
 
     fn sync(&self) -> Result<()> {
