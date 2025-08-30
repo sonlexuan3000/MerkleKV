@@ -56,16 +56,15 @@ impl KVEngineStoreTrait for SledEngine {
         self.len() == 0
     }
     fn scan(&self, prefix: &str) -> Vec<String> {
-        // Nếu prefix rỗng → trả về toàn bộ key (tận dụng hàm keys() có sẵn)
+        
         if prefix.is_empty() {
             return self.keys();
         }
 
-        // Duyệt có-prefix trực tiếp bằng scan_prefix của sled
         self.tree
             .scan_prefix(prefix.as_bytes())
-            .filter_map(|res| res.ok())                // bỏ các entry lỗi
-            .filter_map(|(k, _v)|                       // chỉ lấy key
+            .filter_map(|res| res.ok())               
+            .filter_map(|(k, _v)|                       
                 String::from_utf8(k.to_vec()).ok()
             )
             .collect()

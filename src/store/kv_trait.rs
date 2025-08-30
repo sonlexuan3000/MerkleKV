@@ -56,6 +56,9 @@ pub trait KVEngineStoreTrait: Send + Sync {
     fn keys(&self) -> Vec<String>;
 
     /// Scan for keys matching a prefix.
+    ///
+    /// # Returns
+    /// * `Vec<String>` - Vector of keys matching the prefix
     fn scan(&self, prefix: &str) -> Vec<String>;
 
     /// Get the number of key-value pairs in the store.

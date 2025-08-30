@@ -411,15 +411,6 @@ impl Server {
                         Command::Scan { prefix } => {
                             let store = store.lock().await;
                             let results = store.scan(&prefix);
-                            /*if results.is_empty() {
-                                "NOT_FOUND\r\n".to_string()
-                            } else {
-                                let mut response = String::new();
-                                for (key, value) in results {
-                                    response.push_str(&format!("{} {}\r\n", key, value));
-                                }
-                                format!("VALUES {}\r\n{}", results.len(), response)
-                            }*/
                             let mut response = format!("KEYS {}\r\n", results.len());
                             for k in results {
                                 response.push_str(&format!("{}\r\n", k));

@@ -497,6 +497,22 @@ mod tests {
                 prefix: "test_prefix".to_string()
             }
         );
+        // Test SCAN with empty prefix
+        let result = protocol.parse("SCAN").unwrap();
+        assert_eq!(
+            result,
+            Command::Scan {
+                prefix: "".to_string()
+            }
+        );
+        // Test SCAN with spaces in prefix
+        let result = protocol.parse("SCAN test prefix").unwrap();
+        assert_eq!(
+            result,
+            Command::Scan {
+                prefix: "test prefix".to_string()
+            }
+        );
     }
 
     #[test]
