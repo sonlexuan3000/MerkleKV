@@ -347,6 +347,18 @@ fn same_timestamp_tie_break_by_op_id() {
 #[test]
 fn per_key_ts_isolation() {
     let mut a = LocalApplier::new();
+    
+    // Apply events to demonstrate per-key timestamp isolation
+    // Set initial values with different timestamps
+    a.apply(&sample_event(OpKind::Set, "x", Some("1"), 100));
+    a.apply(&sample_event(OpKind::Set, "y", Some("9"), 200));
+    
+    // Now try to update x with a lower timestamp than y's timestamp
+    // If timestamp isolation is working correctly per key, this should succeed
+    // because x's last timestamp (100) is less than this update's timestamp (150),
+    // even though y has a higher timestamp (200)
+    a.apply(&sample_event(OpKind::Set, "x", Some("2"), 150));
+    
     // If applied incorrectly, the timestamp of y could accidentally block x
     assert_eq!(a.store.get("x").cloned(), Some("2".into()));
     assert_eq!(a.store.get("y").cloned(), Some("9".into()));
