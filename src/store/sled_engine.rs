@@ -113,3 +113,34 @@ impl KVEngineStoreTrait for SledEngine {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_persistence_across_restarts() {
+        // create a temporary directory for sled
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+
+        // 1. start sled engine and insert a key
+        {
+            let engine = SledEngine::new(&path).unwrap();
+            engine.set("hello".into(), "world".into()).unwrap();
+            engine.db.flush().unwrap(); // ensure persisted
+        }
+
+        // 2. restart sled engine from same path
+        {
+            let engine = SledEngine::new(&path).unwrap();
+            let value = engine.get("hello".into());
+            assert_eq!(value, Some("world".to_string()));
+        }
+
+        // cleanup
+        fs::remove_dir_all(&path).unwrap();
+    }
+}
