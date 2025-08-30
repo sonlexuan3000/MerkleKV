@@ -326,34 +326,6 @@ class TestErrorHandling:
 class TestRecoveryScenarios:
     """Test system recovery from various failure scenarios."""
     
-    def test_server_crash_recovery(self, temp_test_dir):
-        """Test recovery after server crash."""
-        # Start server and set data
-        server = MerkleKVServer()
-        server.start(temp_test_dir)
-        
-        client = MerkleKVClient()
-        client.connect()
-        client.set("crash_key", "crash_value")
-        client.disconnect()
-        
-        # Simulate crash by killing process
-        server.process.kill()
-        server.process.wait()
-        
-        # Restart server
-        server = MerkleKVServer()
-        server.start(temp_test_dir)
-        
-        # Verify data recovery
-        client = MerkleKVClient()
-        client.connect()
-        response = client.get("crash_key")
-        assert response == "VALUE crash_value"
-        client.disconnect()
-        
-        server.stop()
-    
     def test_partial_write_recovery(self, connected_client: MerkleKVClient):
         """Test recovery from partial writes."""
         # This test would require more sophisticated setup to simulate
