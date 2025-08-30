@@ -15,7 +15,8 @@ import shutil
 
 def create_persistence_config(port: int, node_id: str) -> Path:
     """Create a flat config file for sled persistence (no replication)."""
-    storage_path = Path("data")  # relative path exactly like manual test
+    # Use a path inside target directory which is git ignored
+    storage_path = Path("target/test_data_persistence")
     storage_path.mkdir(parents=True, exist_ok=True)
 
     config = {
@@ -97,7 +98,7 @@ async def test_storage_persistence_across_restart():
     node_id = "persistence_node"
     config = create_persistence_config(port, node_id)
     server = None
-    storage_path = Path("data")
+    storage_path = Path("target/test_data_persistence")
 
     try:
         # --- First startup ---

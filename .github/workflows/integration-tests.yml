@@ -83,6 +83,13 @@ jobs:
         env:
           RUST_LOG: info
 
+      - name: Run Storage Persistence Tests
+        run: |
+          cd tests/integration
+          python -m pytest test_storage_persistence.py -v --tb=short --junitxml=storage_persistence_results.xml
+        env:
+          RUST_LOG: info
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
