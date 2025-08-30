@@ -38,10 +38,11 @@ class MerkleKVServer:
     """Manages a MerkleKV server process for testing."""
     
     def __init__(self, host: str = TEST_HOST, port: int = TEST_PORT, 
-                 storage_path: str = TEST_STORAGE_PATH):
+                 storage_path: str = TEST_STORAGE_PATH, config_path: Optional[str] = None):
         self.host = host
         self.port = port
         self.storage_path = storage_path
+        self.custom_config_path = config_path
         self.process: Optional[subprocess.Popen] = None
         self.config_file: Optional[Path] = None
         
@@ -65,20 +66,31 @@ client_id = "test_node"
         config_file.write_text(config_content)
         return config_file
     
-    def start(self, temp_dir: Path) -> None:
+    def start(self, temp_dir: Optional[Path] = None) -> None:
         """Start the MerkleKV server process."""
-        self.config_file = self.create_config(temp_dir)
+        if self.custom_config_path:
+            # Use custom config file
+            self.config_file = Path(self.custom_config_path)
+        else:
+            # Create default config file
+            if temp_dir is None:
+                temp_dir = Path(tempfile.mkdtemp())
+            self.config_file = self.create_config(temp_dir)
         
-        # Create storage directory
-        storage_dir = temp_dir / self.storage_path
-        storage_dir.mkdir(exist_ok=True)
+        # Create storage directory if using default config
+        if not self.custom_config_path and temp_dir:
+            storage_dir = temp_dir / self.storage_path
+            storage_dir.mkdir(exist_ok=True)
         
         # Start the server process
         cmd = ["cargo", "run", "--", "--config", str(self.config_file)]
         console.print(f"[blue]Starting MerkleKV server: {' '.join(cmd)}[/blue]")
         
         # Get the project root directory (two levels up from tests/integration)
-        project_root = Path.cwd().parent.parent
+        project_root = Path.cwd()
+        if "tests" in str(project_root):
+            # We're running from tests directory, go up to project root
+            project_root = project_root.parent.parent
         
         self.process = subprocess.Popen(
             cmd,
@@ -90,6 +102,50 @@ client_id = "test_node"
         
         # Wait for server to be ready
         self._wait_for_server()
+
+    async def execute_command(self, command: str) -> str:
+        """Execute a command asynchronously and return the response."""
+        reader, writer = await asyncio.open_connection(self.host, self.port)
+        
+        try:
+            # Send command
+            writer.write(f"{command}\r\n".encode())
+            await writer.drain()
+            
+            # Read response
+            data = await reader.read(1024)
+            response = data.decode().strip()
+            
+            return response
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async def is_running(self) -> bool:
+        """Check if the server is running and responsive."""
+        try:
+            await self.execute_command("GET test_health_check")
+            return True
+        except:
+            return False
+
+    async def stop(self) -> None:
+        """Stop the server process asynchronously."""
+        if self.process:
+            console.print("[red]Stopping MerkleKV server...[/red]")
+            self.process.terminate()
+            
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, self.process.wait),
+                    timeout=5
+                )
+            except asyncio.TimeoutError:
+                console.print("[red]Force killing server process...[/red]")
+                self.process.kill()
+                await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
+            
+            self.process = None
         
     def _wait_for_server(self) -> None:
         """Wait for the server to be ready to accept connections."""
