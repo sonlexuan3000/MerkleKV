@@ -237,8 +237,8 @@ mod tests {
             } else if ev.ts == ts_entry {
                 // Timestamp tie: break using lexicographic comparison of op_id
                 let last_op_id = self.last_op_id.get(&ev.key).cloned().unwrap_or([0; 16]);
-                if ev.op_id <= last_op_id {
-                    return; // Tie-breaker: ignore events with smaller or equal op_id
+                if ev.op_id < last_op_id {
+                    return; // Tie-breaker: ignore events with smaller op_id
                 }
             }
             
