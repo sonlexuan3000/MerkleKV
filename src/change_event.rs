@@ -203,23 +203,45 @@ mod tests {
     struct LocalApplier {
         seen: HashSet<[u8; 16]>,
         last_ts: HashMap<String, u64>,
+        last_op_id: HashMap<String, [u8; 16]>, // For deterministic tie-breaking
         store: HashMap<String, String>,
     }
 
     impl LocalApplier {
         fn new() -> Self {
-            Self { seen: HashSet::new(), last_ts: HashMap::new(), store: HashMap::new() }
+            Self { 
+                seen: HashSet::new(), 
+                last_ts: HashMap::new(), 
+                last_op_id: HashMap::new(), // Initialize tie-breaker tracking
+                store: HashMap::new() 
+            }
         }
 
-        /// Apply a change using idempotency and LWW semantics.
+        /// --- Deterministic Tie-Breaking ----------------------------------------------
+        /// Problem: Equal timestamps previously fell back to non-deterministic UUID
+        /// comparison, causing flaky resolution in tests and replica merges.
+        /// Rule: Define a total order as (timestamp ascending, op_id lexicographic).
+        /// Justification: Ensures stable, idempotent LWW application and reproducible
+        /// state across replicas without affecting Merkle tree construction/sync.
+        /// Complexity: O(1) per comparison; no changes to higher-level protocols.
         fn apply(&mut self, ev: &ChangeEvent) {
             if self.seen.contains(&ev.op_id) {
                 return; // idempotent: ignore duplicates
             }
             let ts_entry = self.last_ts.get(&ev.key).cloned().unwrap_or(0);
+            
+            // LWW with deterministic tie-breaking: reject if timestamp is older,
+            // or if timestamp is equal but op_id is lexicographically smaller
             if ev.ts < ts_entry {
                 return; // LWW: ignore older events
+            } else if ev.ts == ts_entry {
+                // Timestamp tie: break using lexicographic comparison of op_id
+                let last_op_id = self.last_op_id.get(&ev.key).cloned().unwrap_or([0; 16]);
+                if ev.op_id <= last_op_id {
+                    return; // Tie-breaker: ignore events with smaller or equal op_id
+                }
             }
+            
             match ev.op {
                 OpKind::Del => {
                     self.store.remove(&ev.key);
@@ -232,6 +254,7 @@ mod tests {
                 }
             }
             self.last_ts.insert(ev.key.clone(), ev.ts);
+            self.last_op_id.insert(ev.key.clone(), ev.op_id); // Track op_id for tie-breaking
             self.seen.insert(ev.op_id);
         }
     }
@@ -347,6 +370,18 @@ fn same_timestamp_tie_break_by_op_id() {
 #[test]
 fn per_key_ts_isolation() {
     let mut a = LocalApplier::new();
+    
+    // Apply events to demonstrate per-key timestamp isolation
+    // Set initial values with different timestamps
+    a.apply(&sample_event(OpKind::Set, "x", Some("1"), 100));
+    a.apply(&sample_event(OpKind::Set, "y", Some("9"), 200));
+    
+    // Now try to update x with a lower timestamp than y's timestamp
+    // If timestamp isolation is working correctly per key, this should succeed
+    // because x's last timestamp (100) is less than this update's timestamp (150),
+    // even though y has a higher timestamp (200)
+    a.apply(&sample_event(OpKind::Set, "x", Some("2"), 150));
+    
     // If applied incorrectly, the timestamp of y could accidentally block x
     assert_eq!(a.store.get("x").cloned(), Some("2".into()));
     assert_eq!(a.store.get("y").cloned(), Some("9".into()));
