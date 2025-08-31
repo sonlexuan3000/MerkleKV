@@ -392,7 +392,7 @@ impl KVEngineStoreTrait for KvEngine {
         // Default increment amount is 1
         let increment_by = amount.unwrap_or(1);
         
-        // Use write lock exclusively to avoid read/write lock deadlock
+        // Use write lock to ensure exclusive access for atomic read-modify-write
         let mut data = self.data.write().unwrap();
         let current_value = match data.get(key) {
             Some(value) => {
