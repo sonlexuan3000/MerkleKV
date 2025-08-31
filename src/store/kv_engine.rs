@@ -456,7 +456,11 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Result<String>` - The new value after prepending
     fn prepend(&self, key: &str, value: &str) -> Result<String> {
-        // Use write lock exclusively to avoid read/write lock deadlock  
+        // Acquire a write lock to execute the read–modify–write as a single linearizable
+        // critical section. std::sync::RwLock has no upgrade path from read→write; taking
+        // a read lock first would require dropping and re-acquiring, creating a TOCTOU
+        // window where the observed value may change. We hold the write lock from the
+        // start for correctness and LWW consistency—not for deadlock avoidance.  
         let mut data = self.data.write().unwrap();
         if let Some(current_value) = data.get(key) {
             // Prepend the new value
