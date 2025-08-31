@@ -25,7 +25,7 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use super::kv_trait::KVEngineStoreTrait;
 
@@ -39,9 +39,9 @@ use super::kv_trait::KVEngineStoreTrait;
 /// the process terminates.
 #[derive(Clone)]
 pub struct KvEngine {
-    /// Shared reference to the key-value data
-    /// Using Arc allows multiple readers while writes create new instances
-    data: Arc<HashMap<String, String>>,
+    /// Shared reference to the key-value data with thread-safe interior mutability
+    /// Using Arc<RwLock<HashMap>> provides safe shared mutability across threads
+    data: Arc<RwLock<HashMap<String, String>>>,
     // TODO: Add persistent storage implementation
     // In a real implementation, this would use a persistent storage engine like Sled:
     // storage_path: PathBuf,
@@ -69,7 +69,7 @@ impl KvEngine {
         // Ok(Self { storage_path: storage_path.into(), sled_db: db })
 
         Ok(Self {
-            data: Arc::new(HashMap::new()),
+            data: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -89,7 +89,7 @@ impl KvEngine {
     /// }
     /// ```
     pub fn get(&self, key: &str) -> Option<String> {
-        self.data.get(key).cloned()
+        self.data.read().unwrap().get(key).cloned()
     }
 
     /// Store a key-value pair.
@@ -112,11 +112,8 @@ impl KvEngine {
     /// This implementation is O(n) in the number of keys due to HashMap cloning.
     /// A persistent storage engine would be much more efficient.
     pub fn set(&mut self, key: String, value: String) {
-        // Create a new HashMap with the updated value
-        // TODO: Replace with efficient persistent storage writes
-        let mut new_data = (*self.data).clone();
-        new_data.insert(key, value);
-        self.data = Arc::new(new_data);
+        // Use RwLock for thread-safe interior mutability instead of HashMap cloning
+        self.data.write().unwrap().insert(key, value);
     }
 
     /// Delete a key-value pair.
@@ -132,11 +129,8 @@ impl KvEngine {
     /// engine.delete("user:123");
     /// ```
     pub fn delete(&mut self, key: &str) {
-        // Create a new HashMap without the deleted key
-        // TODO: Replace with efficient persistent storage deletes
-        let mut new_data = (*self.data).clone();
-        new_data.remove(key);
-        self.data = Arc::new(new_data);
+        // Use RwLock for safe deletion instead of HashMap cloning
+        self.data.write().unwrap().remove(key);
     }
 
     /// Get all keys currently stored in the engine.
@@ -151,7 +145,7 @@ impl KvEngine {
     /// This operation is O(n) and creates a new vector. In a production
     /// system, this should be replaced with an iterator-based approach.
     pub fn keys(&self) -> Vec<String> {
-        self.data.keys().cloned().collect()
+        self.data.read().unwrap().keys().cloned().collect()
     }
 
     /// Increment a numeric value stored at the given key.
@@ -176,9 +170,8 @@ impl KvEngine {
     /// ```
     pub fn increment(&mut self, key: &str, amount: Option<i64>) -> Result<i64, String> {
         let increment_by = amount.unwrap_or(1);
-        let mut new_data = (*self.data).clone();
         
-        let new_value = match new_data.get(key) {
+        let new_value = match self.data.read().unwrap().get(key) {
             Some(value) => {
                 // Try to parse the existing value as a number
                 match value.parse::<i64>() {
@@ -189,10 +182,8 @@ impl KvEngine {
             None => increment_by, // Key doesn't exist, start with the increment amount
         };
         
-        // Store the new value
-        new_data.insert(key.to_string(), new_value.to_string());
-        self.data = Arc::new(new_data);
-        
+        // Store the new value using RwLock
+        self.data.write().unwrap().insert(key.to_string(), new_value.to_string());
         Ok(new_value)
     }
 
@@ -240,9 +231,7 @@ impl KvEngine {
     /// println!("New value: {}", new_value); // e.g., "Hello World!"
     /// ```
     pub fn append(&mut self, key: &str, value: &str) -> String {
-        let mut new_data = (*self.data).clone();
-        
-        let new_value = match new_data.get(key) {
+        let new_value = match self.data.read().unwrap().get(key) {
             Some(existing) => {
                 let mut result = existing.clone();
                 result.push_str(value);
@@ -251,10 +240,8 @@ impl KvEngine {
             None => value.to_string(), // Key doesn't exist, use the value as is
         };
         
-        // Store the new value
-        new_data.insert(key.to_string(), new_value.clone());
-        self.data = Arc::new(new_data);
-        
+        // Store the new value using RwLock
+        self.data.write().unwrap().insert(key.to_string(), new_value.clone());
         new_value
     }
 
@@ -276,9 +263,7 @@ impl KvEngine {
     /// println!("New value: {}", new_value); // e.g., "Hello, World!"
     /// ```
     pub fn prepend(&mut self, key: &str, value: &str) -> String {
-        let mut new_data = (*self.data).clone();
-        
-        let new_value = match new_data.get(key) {
+        let new_value = match self.data.read().unwrap().get(key) {
             Some(existing) => {
                 let mut result = value.to_string();
                 result.push_str(existing);
@@ -287,10 +272,8 @@ impl KvEngine {
             None => value.to_string(), // Key doesn't exist, use the value as is
         };
         
-        // Store the new value
-        new_data.insert(key.to_string(), new_value.clone());
-        self.data = Arc::new(new_data);
-        
+        // Store the new value using RwLock
+        self.data.write().unwrap().insert(key.to_string(), new_value.clone());
         new_value
     }
 
@@ -306,8 +289,8 @@ impl KvEngine {
     /// assert_eq!(engine.keys().len(), 0);
     /// ```
     pub fn truncate(&mut self) {
-        // Create a new empty HashMap
-        self.data = Arc::new(HashMap::new());
+        // Clear all data using RwLock
+        self.data.write().unwrap().clear();
     }
 }
 
@@ -320,7 +303,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Option<String>` - The value if found, None otherwise
     fn get(&self, key: &str) -> Option<String> {
-        self.data.get(key).cloned()
+        self.data.read().unwrap().get(key).cloned()
     }
 
     /// Store a key-value pair.
@@ -342,17 +325,13 @@ impl KVEngineStoreTrait for KvEngine {
     /// ⚠️ This method is NOT safe for concurrent access!
     /// Concurrent writes can lead to data corruption or lost updates.
     fn set(&self, key: String, value: String) -> Result<()> {
-        // This is unsafe for concurrent access!
-        // We need to clone the HashMap, modify it, and create a new Arc
-        let mut new_data = HashMap::clone(&self.data);
-        new_data.insert(key, value);
-        // This is a race condition if multiple threads do this simultaneously
-        unsafe {
-            let arc_ptr = Arc::into_raw(self.data.clone());
-            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-            *mutex_ptr = new_data;
-            let _ = Arc::from_raw(arc_ptr);
-        }
+        // --- Memory Safety Fix -------------------------------------------------------
+        // Problem: Prior implementation used unsafe raw pointer casts violating 
+        // Rust's aliasing rules and causing potential undefined behavior.
+        // Solution: Use RwLock for thread-safe interior mutability following Copilot's
+        // recommendation. Maintains existing API and LWW semantics while eliminating
+        // unsafe code that could cause data corruption or memory safety violations.
+        self.data.write().unwrap().insert(key, value);
         Ok(())
     }
 
@@ -371,18 +350,10 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Thread Safety
     /// ⚠️ This method is NOT safe for concurrent access!
     fn delete(&self, key: &str) -> bool {
-        // This is unsafe for concurrent access!
-        let mut new_data = HashMap::clone(&self.data);
-        let existed = new_data.remove(key).is_some();
-        if existed {
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-        }
-        existed
+        // Memory-safe deletion: use RwLock for thread-safe interior mutability,
+        // eliminating unsafe raw pointer operations while preserving LWW
+        // semantics and existing API behavior for anti-entropy protocols.
+        self.data.write().unwrap().remove(key).is_some()
     }
 
     /// Get all keys currently stored in the engine.
@@ -390,7 +361,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Vec<String>` - Vector of all keys in the store
     fn keys(&self) -> Vec<String> {
-        self.data.keys().cloned().collect()
+        self.data.read().unwrap().keys().cloned().collect()
     }
 
     /// Get the number of key-value pairs in the store.
@@ -398,7 +369,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `usize` - Number of key-value pairs
     fn len(&self) -> usize {
-        self.data.len()
+        self.data.read().unwrap().len()
     }
 
     /// Check if the store is empty.
@@ -406,7 +377,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `bool` - True if the store is empty, false otherwise
     fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.data.read().unwrap().is_empty()
     }
     
     /// Increment a numeric value.
@@ -418,14 +389,12 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Result<i64>` - The new value after incrementing, or error if not a valid number
     fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64> {
-        // This is unsafe for concurrent access!
-        let mut new_data = HashMap::clone(&self.data);
-        
         // Default increment amount is 1
         let increment_by = amount.unwrap_or(1);
         
-        // Get the current value or initialize to 0
-        let current_value = match new_data.get(key) {
+        // Use write lock to ensure exclusive access for atomic read-modify-write
+        let mut data = self.data.write().unwrap();
+        let current_value = match data.get(key) {
             Some(value) => {
                 // Try to parse the current value as a number
                 value.parse::<i64>().map_err(|_| {
@@ -435,18 +404,9 @@ impl KVEngineStoreTrait for KvEngine {
             None => 0, // Key doesn't exist, start from 0
         };
         
-        // Calculate the new value
+        // Calculate and store the new value
         let new_value = current_value + increment_by;
-        
-        // Store the new value
-        new_data.insert(key.to_string(), new_value.to_string());
-        
-        unsafe {
-            let arc_ptr = Arc::into_raw(self.data.clone());
-            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-            *mutex_ptr = new_data;
-            let _ = Arc::from_raw(arc_ptr);
-        }
+        data.insert(key.to_string(), new_value.to_string());
         
         Ok(new_value)
     }
@@ -474,24 +434,12 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Result<String>` - The new value after appending
     fn append(&self, key: &str, value: &str) -> Result<String> {
-        // This is unsafe for concurrent access!
-        let mut new_data = HashMap::clone(&self.data);
-        
-        // Check if the key exists
-        if let Some(current_value) = new_data.get(key) {
+        // Use write lock exclusively to avoid read/write lock deadlock
+        let mut data = self.data.write().unwrap();
+        if let Some(current_value) = data.get(key) {
             // Append the new value
             let new_value = format!("{}{}", current_value, value);
-            
-            // Store the new value
-            new_data.insert(key.to_string(), new_value.clone());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
+            data.insert(key.to_string(), new_value.clone());
             Ok(new_value)
         } else {
             // Key doesn't exist, return error as per trait documentation
@@ -508,24 +456,16 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Result<String>` - The new value after prepending
     fn prepend(&self, key: &str, value: &str) -> Result<String> {
-        // This is unsafe for concurrent access!
-        let mut new_data = HashMap::clone(&self.data);
-        
-        // Check if the key exists
-        if let Some(current_value) = new_data.get(key) {
+        // Acquire a write lock to execute the read–modify–write as a single linearizable
+        // critical section. std::sync::RwLock has no upgrade path from read→write; taking
+        // a read lock first would require dropping and re-acquiring, creating a TOCTOU
+        // window where the observed value may change. We hold the write lock from the
+        // start for correctness and LWW consistency—not for deadlock avoidance.  
+        let mut data = self.data.write().unwrap();
+        if let Some(current_value) = data.get(key) {
             // Prepend the new value
             let new_value = format!("{}{}", value, current_value);
-            
-            // Store the new value
-            new_data.insert(key.to_string(), new_value.clone());
-            
-            unsafe {
-                let arc_ptr = Arc::into_raw(self.data.clone());
-                let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-                *mutex_ptr = new_data;
-                let _ = Arc::from_raw(arc_ptr);
-            }
-            
+            data.insert(key.to_string(), new_value.clone());
             Ok(new_value)
         } else {
             // Key doesn't exist, return error as per trait documentation
@@ -538,14 +478,9 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Result<()>` - Success or error
     fn truncate(&self) -> Result<()> {
-        // This is unsafe for concurrent access!
-        unsafe {
-            let arc_ptr = Arc::into_raw(self.data.clone());
-            let mutex_ptr = arc_ptr as *mut HashMap<String, String>;
-            *mutex_ptr = HashMap::new();
-            let _ = Arc::from_raw(arc_ptr);
-        }
-        
+        // Memory-safe truncation using RwLock: clears all data while preserving
+        // anti-entropy reconciliation semantics without unsafe pointer operations.
+        self.data.write().unwrap().clear();
         Ok(())
     }
     
@@ -554,7 +489,7 @@ impl KVEngineStoreTrait for KvEngine {
     /// # Returns
     /// * `Result<u64>` - Number of key-value pairs or error
     fn count_keys(&self) -> Result<u64> {
-        Ok(self.data.len() as u64)
+        Ok(self.data.read().unwrap().len() as u64)
     }
     
     /// Force synchronization of pending changes to persistent storage.
