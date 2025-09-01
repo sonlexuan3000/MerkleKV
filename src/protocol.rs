@@ -500,8 +500,7 @@ mod tests {
         // Test SCAN with empty prefix
         assert!(protocol.parse("SCAN").is_err());
         // Test SCAN with spaces in prefix
-        let result = protocol.parse("SCAN test prefix").unwrap();
-        assert!(result.is_err());
+        assert!(protocol.parse("SCAN test prefix").is_err());
     }
 
     #[test]

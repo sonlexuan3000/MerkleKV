@@ -155,11 +155,11 @@ impl KvEngine {
     }
 
     pub fn scan(&self, prefix: &str) -> Vec<String> {
+        let map = self.data.read().unwrap();
         if prefix.is_empty() {
-            return self.data.keys().cloned().collect();
+            return map.keys().cloned().collect();
         }
-        self.data
-            .keys()
+        map.keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect()
