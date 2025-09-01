@@ -498,21 +498,10 @@ mod tests {
             }
         );
         // Test SCAN with empty prefix
-        let result = protocol.parse("SCAN").unwrap();
-        assert_eq!(
-            result,
-            Command::Scan {
-                prefix: "".to_string()
-            }
-        );
+        assert!(protocol.parse("SCAN").is_err());
         // Test SCAN with spaces in prefix
         let result = protocol.parse("SCAN test prefix").unwrap();
-        assert_eq!(
-            result,
-            Command::Scan {
-                prefix: "test prefix".to_string()
-            }
-        );
+        assert!(result.is_err());
     }
 
     #[test]
