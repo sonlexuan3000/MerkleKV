@@ -79,6 +79,13 @@ pub struct ReplicationConfig {
     /// Unique identifier for this node in MQTT communications
     /// Should be unique across all nodes in the cluster
     pub client_id: String,
+
+    /// Optional secret for authenticating with the MQTT broker.
+    /// This value may be overridden at runtime by the CLIENT_PASSWORD environment variable.
+    /// This optional parameter allows deployments to specify broker authentication via configuration
+    /// while preserving the ability to override it securely through environment variables.
+    #[serde(default)]
+    pub client_password: Option<String>,
 }
 
 impl Config {
@@ -125,6 +132,7 @@ impl Config {
                 mqtt_port: 1883,
                 topic_prefix: "merkle_kv".to_string(),
                 client_id: "node1".to_string(),
+                client_password: None,
             },
             sync_interval_seconds: 60,
         }
@@ -173,6 +181,7 @@ client_id = "node1"
         config.replication.mqtt_port = 1883;
         config.replication.topic_prefix = "merkle_kv".to_string();
         config.replication.client_id = "node1".to_string();
+        config.replication.client_password = None;
 
         // Verify all configuration values are set correctly
         assert_eq!(config.host, "127.0.0.1");
@@ -184,5 +193,6 @@ client_id = "node1"
         assert_eq!(config.replication.mqtt_port, 1883);
         assert_eq!(config.replication.topic_prefix, "merkle_kv");
         assert_eq!(config.replication.client_id, "node1");
+        assert_eq!(config.replication.client_password, None);
     }
 }

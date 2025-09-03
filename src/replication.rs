@@ -89,13 +89,51 @@ impl Replicator {
     /// - Publishes to: `{topic_prefix}/events`
     /// - Subscribes to: `{topic_prefix}/events/#`
     pub async fn new(config: &Config) -> Result<Self> {
+        // -----------------------------------------------------------------------------
+        // Design Note (Security & Operability)
+        // This block implements environment-first resolution for identity (Client ID)
+        // and secret (password). The objective is twofold: (i) enable secure injection
+        // of credentials via deployment tooling, and (ii) preserve configuration
+        // determinism when environment variables are absent. The approach deliberately
+        // avoids widening the configuration module's responsibilities.
+        // -----------------------------------------------------------------------------
+        
+        // Environment-first resolution of identity and credentials
+        // Client ID: env var CLIENT_ID overrides config
+        let effective_client_id = std::env::var("CLIENT_ID")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| config.replication.client_id.clone());
+
+        // Password: env var CLIENT_PASSWORD overrides config.replication.client_password
+        let effective_password = std::env::var("CLIENT_PASSWORD")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| config.replication.client_password.clone());
+
         // Configure MQTT client options
         let mut mqtt_options = MqttOptions::new(
-            &config.replication.client_id,
+            &effective_client_id,
             &config.replication.mqtt_broker,
             config.replication.mqtt_port,
         );
         mqtt_options.set_keep_alive(Duration::from_secs(30));
+
+        // -----------------------------------------------------------------------------
+        // Rationale (Compatibility)
+        // We re-use the effective Client ID as the MQTT username when a password is
+        // provided. This conservative choice avoids a schema expansion and sustains
+        // backwards compatibility. If a distinct username becomes necessary, it can be
+        // added later without perturbing the present call sites.
+        // -----------------------------------------------------------------------------
+        
+        // Some brokers accept "username + password". In the absence of a dedicated
+        // username field in configuration, we conservatively re-use the Client ID
+        // as the username. This preserves the existing configuration surface.
+        // If a future username field is introduced, it can replace this parameter.
+        if let Some(pw) = effective_password {
+            mqtt_options.set_credentials(effective_client_id.clone(), pw);
+        }
         
     // Create MQTT client and event loop
     let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
