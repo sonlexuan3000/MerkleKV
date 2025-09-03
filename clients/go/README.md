@@ -99,6 +99,9 @@ err := client.Close()
 // Set a key-value pair
 err := client.Set("key", "value")
 
+// Set with empty value (handled automatically)
+err := client.Set("key", "")  // Empty values are represented as "" in the SET command. The client handles this automatically.
+
 // Get a value
 value, err := client.Get("key")
 if err == merklekv.ErrNotFound {

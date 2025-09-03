@@ -174,6 +174,15 @@ func (c *Client) sendCommand(ctx context.Context, command string) (string, error
 	return response, nil
 }
 
+// formatSetValue formats a value for the SET command according to protocol rules.
+// Empty values are represented as "" in the SET command.
+func formatSetValue(value string) string {
+	if value == "" {
+		return `""`
+	}
+	return value
+}
+
 // Get retrieves the value for a key.
 //
 // Returns the value if the key exists, or ErrNotFound if the key doesn't exist.
@@ -224,13 +233,8 @@ func (c *Client) SetWithContext(ctx context.Context, key, value string) error {
 		return ErrEmptyKey
 	}
 
-	// Handle empty values by quoting them
-	var command string
-	if value == "" {
-		command = fmt.Sprintf(`SET %s ""`, key)
-	} else {
-		command = fmt.Sprintf("SET %s %s", key, value)
-	}
+	// Format the command using the helper function
+	command := fmt.Sprintf("SET %s %s", key, formatSetValue(value))
 
 	response, err := c.sendCommand(ctx, command)
 	if err != nil {

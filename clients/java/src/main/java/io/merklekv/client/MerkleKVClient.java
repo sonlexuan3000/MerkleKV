@@ -24,7 +24,6 @@ import java.util.logging.Level;
  */
 public class MerkleKVClient implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(MerkleKVClient.class.getName());
-    private static final String PROTOCOL_VERSION = "1.0";
     
     private final String host;
     private final int port;

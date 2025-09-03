@@ -30,7 +30,6 @@ import java.util.logging.Level;
  */
 public class AsyncMerkleKVClient implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(AsyncMerkleKVClient.class.getName());
-    private static final String PROTOCOL_VERSION = "1.0";
     
     private final String host;
     private final int port;
