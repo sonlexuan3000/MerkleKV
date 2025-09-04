@@ -16,7 +16,8 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
   - [Data Flow Patterns](#data-flow-patterns)
   - [System Components](#system-components)
   - [Merkle Tree Structure & Synchronization](#merkle-tree-structure--synchronization)
-- [🔧 Getting Started](#-getting-started)
+  - [🔧 Getting Started](#-getting-started)
+  - [🐳 Docker Deployment](#-docker-deployment)
   - [Prerequisites](#prerequisites)
   - [Quick Start Guide](#quick-start-guide)
   - [Installation & Setup](#installation--setup)
@@ -479,6 +480,93 @@ python run_tests.py --mode basic
 ```
 
 **🎉 Congratulations!** You now have a working MerkleKV instance. Continue reading for multi-node clusters and advanced features.
+
+### Docker Deployment
+
+For production deployments or easy setup, MerkleKV can be run using Docker with multi-stage builds for optimal performance and security.
+
+#### Prerequisites for Docker
+- **🐳 Docker**: Version 20.10 or later
+- **📡 MQTT Broker**: External MQTT broker (e.g., test.mosquitto.org for testing)
+
+#### Quick Docker Setup
+
+1. **Clone and Build**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/AI-Decenter/MerkleKV.git
+   cd MerkleKV
+   
+   # Build the Docker image
+   docker build -t merklekv .
+   ```
+
+2. **Create Custom Configuration**
+   ```bash
+   # Create your custom config file
+   cat > my_config.toml << EOF
+   host = "0.0.0.0"
+   port = 7379
+   storage_path = "data"
+   engine = "rwlock"
+   sync_interval_seconds = 60
+   
+   [replication]
+   enabled = true
+   mqtt_broker = "test.mosquitto.org"
+   mqtt_port = 1883
+   topic_prefix = "merkle_kv"
+   client_id = "docker_node"
+   EOF
+   ```
+
+3. **Run with Docker Compose (Recommended)**
+   ```bash
+   # Start the service
+   docker-compose up -d
+   
+   # Check logs
+   docker-compose logs -f
+   
+   # Stop the service
+   docker-compose down
+   ```
+
+4. **Run with Docker Run**
+   ```bash
+   # Create data directory
+   mkdir -p data
+   
+   # Run the container
+   docker run -d --name merklekv \
+     -p 7379:7379 \
+     -v $(pwd)/my_config.toml:/app/config/config.toml:ro \
+     -v $(pwd)/data:/app/data \
+     merklekv
+   ```
+
+#### Test Docker Deployment
+```bash
+# Test basic operations
+echo "VERSION" | nc localhost 7379
+# Expected: MerkleKV 1.0.0
+
+echo "SET hello world" | nc localhost 7379
+# Expected: OK
+
+echo "GET hello" | nc localhost 7379
+# Expected: world
+```
+
+#### Docker Features
+- **Automated Publishing**: Images automatically published to Docker Hub on releases
+- **Multi-stage build**: Optimized for production with minimal image size
+- **Static linking**: Self-contained binary with no external dependencies
+- **Security**: Runs as non-root user with minimal attack surface
+- **Persistence**: Data directory mounted for persistent storage
+- **Custom config**: Easy configuration management via volume mounts
+- **Automated Publishing**: See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for setup instructions
+
 
 ### Installation & Setup
 
