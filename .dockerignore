@@ -1,0 +1,73 @@
+# Git and version control
+.git
+.gitignore
+.github
+
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Documentation
+README.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+LICENSE
+*.md
+
+# Test files and examples
+tests/
+clients/
+examples/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# Python virtual environments (for tests)
+venv/
+__pycache__/
+*.pyc
+
+# Node modules (for client tests)
+node_modules/
+npm-debug.log*
+
+# Java build artifacts
+*.class
+*.jar
+target/
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Configuration files that might be overridden
+quickstart.toml
+
+# Development files
+.github_actions_summary.md 

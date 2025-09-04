@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  merklekv:
+    build: .
+    container_name: merklekv
+    ports:
+      - "7379:7379"
+    volumes:
+      # Mount custom config file
+      - ./config.toml:/app/config/config.toml:ro
+      # Mount data directory for persistence
+      - ./data:/app/data
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    restart: unless-stopped
+    networks:
+      - merklekv-network
+
+networks:
+  merklekv-network:
+    driver: bridge
