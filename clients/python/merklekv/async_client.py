@@ -3,6 +3,10 @@ Asynchronous MerkleKV client implementation.
 """
 
 import asyncio
+import socket
+from typing import Optional
+
+import asyncio
 from typing import Optional
 
 from .client import MerkleKVError, ConnectionError, TimeoutError, ProtocolError
@@ -16,7 +20,7 @@ class AsyncMerkleKVClient:
     and performing basic operations like GET, SET, and DELETE.
     
     Example:
-        client = AsyncMerkleKVClient("localhost", 7878)
+        client = AsyncMerkleKVClient("localhost", 7379)
         await client.connect()
         
         await client.set("user:123", "john_doe")
@@ -26,13 +30,13 @@ class AsyncMerkleKVClient:
         await client.close()
     """
     
-    def __init__(self, host: str = "localhost", port: int = 7878, timeout: float = 5.0):
+    def __init__(self, host: str = "localhost", port: int = 7379, timeout: float = 5.0):
         """
         Initialize the async MerkleKV client.
         
         Args:
             host: Server hostname (default: "localhost")
-            port: Server port (default: 7878)
+            port: Server port (default: 7379)
             timeout: Connection timeout in seconds (default: 5.0)
         """
         self.host = host
@@ -102,12 +106,12 @@ class AsyncMerkleKVClient:
             self._writer.write(message)
             await self._writer.drain()
             
-            # Read response (up to 64KB for large values)
-            response_data = await asyncio.wait_for(
-                self._reader.read(65536),
+            # Read response line by line until we get CRLF
+            response = await asyncio.wait_for(
+                self._reader.readuntil(b'\r\n'),
                 timeout=self.timeout
             )
-            response = response_data.decode('utf-8').strip()
+            response = response[:-2].decode('utf-8')  # Remove CRLF and decode
             
             # Check for protocol errors
             if response.startswith("ERROR "):

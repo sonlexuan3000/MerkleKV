@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>MerkleKV.Client</id>
+    <version>1.0.0</version>
+    <authors>AI-Decenter</authors>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <readme>README.md</readme>
+    <projectUrl>https://github.com/AI-Decenter/MerkleKV</projectUrl>
+    <description>Official .NET client library for MerkleKV distributed key-value store</description>
+    <tags>merkle key-value distributed database nosql</tags>
+    <repository type="git" url="https://github.com/AI-Decenter/MerkleKV" commit="573b1573b08c0e97d65b423a1855516d62bbdbe7" />
+    <dependencies>
+      <group targetFramework="net8.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="/workspaces/MerkleKV/clients/dotnet/src/bin/Debug/net8.0/MerkleKV.Client.dll" target="lib/net8.0/MerkleKV.Client.dll" />
+    <file src="/workspaces/MerkleKV/clients/dotnet/README.md" target="/README.md" />
+  </files>
+</package>

@@ -34,7 +34,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 
@@ -355,13 +355,14 @@ impl Server {
     /// - Network errors terminate the connection
     /// - Storage errors are converted to ERROR responses
     async fn handle_connection(
-        mut socket: TcpStream,
+        socket: TcpStream,
         addr: SocketAddr,
         store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
         stats: Arc<ServerStats>,
     replicator: Option<Replicator>,
     ) -> Result<()> {
-        let mut buffer = [0; 1024];
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
         let protocol = Protocol::new();
 
         // Local helper describing what to publish after the storage write.
@@ -375,24 +376,32 @@ impl Server {
         }
 
         loop {
-            // Read data from the client
-            let n = match socket.read(&mut buffer).await {
+            // Read a complete line from the client (terminated by \n)
+            // Defensive upper bound to prevent OOM attacks
+            let mut request_line = String::new();
+            match reader.read_line(&mut request_line).await {
                 Ok(0) => {
                     // Client closed the connection
                     info!("Client {} disconnected", addr);
                     break;
                 }
-                Ok(n) => n,
+                Ok(bytes_read) => {
+                    // Check for line length abuse (1MB limit)
+                    if bytes_read > 1024 * 1024 {
+                        let error_msg = "ERROR line too long\r\n";
+                        let _ = write_half.write_all(error_msg.as_bytes()).await;
+                        error!("Dropping connection {}: line too long ({} bytes)", addr, bytes_read);
+                        break;
+                    }
+                    // Successfully read a line
+                }
                 Err(e) => {
                     error!("Error reading from client {}: {}", addr, e);
                     break;
                 }
             };
 
-            // Convert received bytes to string
-            let request = std::str::from_utf8(&buffer[..n])?;
-            
-            match protocol.parse(request) {
+            match protocol.parse(&request_line) {
                 Ok(command) => {
                     // Update command statistics
                     stats.increment_command_counter(&command);
@@ -428,12 +437,16 @@ impl Server {
                             }
                         }
                         Command::Delete { key } => {
-                            {
+                            let deleted = {
                                 let store = store.lock().await;
-                                store.delete(&key);
+                                store.delete(&key)
+                            };
+                            if deleted {
+                                publishes.push(Publish::Delete(key.clone()));
+                                "DELETED\r\n".to_string()
+                            } else {
+                                "NOT_FOUND\r\n".to_string()
                             }
-                            publishes.push(Publish::Delete(key.clone()));
-                            "OK\r\n".to_string()
                         }
                         Command::Increment { key, amount } => {
                             // Check if the key already exists
@@ -629,7 +642,7 @@ impl Server {
                         Command::Shutdown => {
                             // Send OK response before shutting down
                             let response = "OK\r\n".to_string();
-                            if let Err(e) = socket.write_all(response.as_bytes()).await {
+                            if let Err(e) = write_half.write_all(response.as_bytes()).await {
                                 error!("Error writing to client {}: {}", addr, e);
                             }
                             
@@ -657,7 +670,7 @@ impl Server {
                     }
                     
                     // Send response back to client
-                    if let Err(e) = socket.write_all(response.as_bytes()).await {
+                    if let Err(e) = write_half.write_all(response.as_bytes()).await {
                         error!("Error writing to client {}: {}", addr, e);
                         break;
                     }
@@ -665,7 +678,7 @@ impl Server {
                 Err(e) => {
                     // Send error response for invalid commands
                     let error_msg = format!("ERROR {}\r\n", e);
-                    if let Err(e) = socket.write_all(error_msg.as_bytes()).await {
+                    if let Err(e) = write_half.write_all(error_msg.as_bytes()).await {
                         error!("Error writing to client {}: {}", addr, e);
                         break;
                     }

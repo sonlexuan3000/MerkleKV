@@ -8,7 +8,7 @@ async function main() {
     console.log('=== MerkleKV Node.js Client Example ===');
     
     // Create client
-    const client = new MerkleKVClient('localhost', 7878);
+    const client = new MerkleKVClient('localhost', 7379);
     
     try {
         // Connect to server

@@ -4,33 +4,39 @@ Official client libraries for [MerkleKV](https://github.com/AI-Decenter/MerkleKV
 
 ## Available Clients
 
-### Phase 1 (Implemented)
+All 9 official client libraries have been implemented and are production-ready:
 
 | Language | Package | Status | Documentation |
 |----------|---------|--------|---------------|
 | **Python** | `merklekv` | ✅ Ready | [README](python/README.md) |
 | **Node.js** | `@merklekv/client` | ✅ Ready | [README](nodejs/README.md) |
 | **Go** | `github.com/AI-Decenter/MerkleKV/clients/go` | ✅ Ready | [README](go/README.md) |
-
-### Phase 2+ (Planned)
-
-| Language | Package | Status | Priority |
-|----------|---------|--------|----------|
-| **Java** | `io.merklekv:client` | 📋 Planned | High |
-| **Rust** | `merklekv` | 📋 Planned | High |
-| **C#/.NET** | `MerkleKV.Client` | 📋 Planned | Medium |
-| **C++** | `libmerklekv` | 📋 Planned | Medium |
-| **Ruby** | `merklekv-rb` | 📋 Planned | Medium |
-| **PHP** | `merklekv/client` | 📋 Planned | Medium |
+| **Java** | `io.merklekv:client` | ✅ Ready | [README](java/README.md) |
+| **Rust** | `merklekv-client` | ✅ Ready | [README](rust/README.md) |
+| **C#/.NET** | `MerkleKV.Client` | ✅ Ready | [README](dotnet/README.md) |
+| **C++** | Header-only library | ✅ Ready | [README](cpp/README.md) |
+| **Ruby** | `merklekv` | ✅ Ready | [README](ruby/README.md) |
+| **PHP** | `merklekv/client` | ✅ Ready | [README](php/README.md) |
 
 ## Protocol Overview
 
-All clients implement the MerkleKV TCP text protocol:
+All clients implement the MerkleKV TCP text protocol with consistent behavior:
 
-- **Connection**: TCP socket to MerkleKV server (default port 7878)
+- **Connection**: TCP socket to MerkleKV server (default port 7379)
 - **Commands**: Text-based with CRLF (`\r\n`) termination
-- **Core Operations**: `GET key`, `SET key value`, `DELETE key`
-- **Responses**: `VALUE data`, `OK`, `NOT_FOUND`, `ERROR message`
+- **Core Operations**: `GET key`, `SET key value`, `DEL key`
+- **Responses**: `VALUE <data>`, `OK`, `(null)`, `NOT_FOUND`, `ERROR message`
+- **Encoding**: UTF-8 with empty values represented as `""`
+
+## Shared Constraints & Protocol Behavior
+
+All clients handle these protocol characteristics consistently:
+
+- **GET Response**: Returns `VALUE <data>` prefix that clients strip automatically
+- **Empty Values**: Server returns `VALUE ""` which clients convert to empty string
+- **DELETE Response**: Server returns `DELETED` for existing keys and `NOT_FOUND` for non-existing keys
+- **Control Characters**: Server accepts tab (`\t`) characters in values but not newlines (`\n`) due to protocol design
+- **Large Values**: Server supports values of arbitrary size using streaming protocol
 
 ## Installation & Usage
 
@@ -43,14 +49,10 @@ pip install merklekv
 ```python
 from merklekv import MerkleKVClient
 
-client = MerkleKVClient("localhost", 7878)
-client.connect()
-
+client = MerkleKVClient("localhost", 7379)
 client.set("user:123", "john_doe")
 value = client.get("user:123")  # Returns "john_doe"
 client.delete("user:123")
-
-client.close()
 ```
 
 ### Node.js
@@ -62,14 +64,10 @@ npm install @merklekv/client
 ```javascript
 const { MerkleKVClient } = require('@merklekv/client');
 
-const client = new MerkleKVClient('localhost', 7878);
-await client.connect();
-
+const client = new MerkleKVClient('localhost', 7379);
 await client.set('user:123', 'john_doe');
 const value = await client.get('user:123'); // Returns 'john_doe'
 await client.delete('user:123');
-
-await client.close();
 ```
 
 ### Go
@@ -81,15 +79,108 @@ go get github.com/AI-Decenter/MerkleKV/clients/go
 ```go
 import merklekv "github.com/AI-Decenter/MerkleKV/clients/go"
 
-client := merklekv.New("localhost", 7878)
-err := client.Connect()
-// Handle error...
+client := merklekv.New("localhost", 7379)
+client.Set("user:123", "john_doe")
+value, _ := client.Get("user:123") // Returns "john_doe"
+client.Delete("user:123")
+```
 
-err = client.Set("user:123", "john_doe")
-value, err := client.Get("user:123") // Returns "john_doe"
-err = client.Delete("user:123")
+### Java
 
-client.Close()
+```xml
+<dependency>
+    <groupId>io.merklekv</groupId>
+    <artifactId>merklekv-client-java</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+```java
+import io.merklekv.client.MerkleKVClient;
+
+try (MerkleKVClient client = new MerkleKVClient("localhost", 7379)) {
+    client.set("user:123", "john_doe");
+    String value = client.get("user:123"); // Returns "john_doe"
+    client.delete("user:123");
+}
+```
+
+### Rust
+
+```toml
+[dependencies]
+merklekv-client = "1.0.0"
+```
+
+```rust
+use merklekv_client::Client;
+
+let mut client = Client::connect("127.0.0.1:7379")?;
+client.set("user:123", "john_doe")?;
+let value = client.get("user:123")?; // Returns Some("john_doe")
+client.delete("user:123")?;
+```
+
+### C#/.NET
+
+```bash
+dotnet add package MerkleKV.Client
+```
+
+```csharp
+using MerkleKV;
+
+using var client = new MerkleKvClient("localhost", 7379);
+await client.SetAsync("user:123", "john_doe");
+var value = await client.GetAsync("user:123"); // Returns "john_doe"
+await client.DeleteAsync("user:123");
+```
+
+### C++
+
+```cmake
+find_package(MerkleKV REQUIRED)
+target_link_libraries(your_target MerkleKV::Client)
+```
+
+```cpp
+#include <merklekv/client.hpp>
+
+MerkleKvClient client("localhost", 7379);
+client.set("user:123", "john_doe");
+auto value = client.get("user:123"); // Returns optional<string>
+client.del("user:123");
+```
+
+### Ruby
+
+```bash
+gem install merklekv
+```
+
+```ruby
+require 'merklekv'
+
+client = MerkleKV::Client.new(host: "localhost", port: 7379)
+client.set("user:123", "john_doe")
+value = client.get("user:123") # Returns "john_doe"  
+client.delete("user:123")
+```
+
+### PHP
+
+```bash
+composer require merklekv/client
+```
+
+```php
+<?php
+use MerkleKV\Client;
+
+$client = new Client("localhost", 7379);
+$client->set("user:123", "john_doe");
+$value = $client->get("user:123"); // Returns "john_doe"
+$client->delete("user:123");
 ```
 
 ## Common Features

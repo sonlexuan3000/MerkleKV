@@ -9,7 +9,7 @@
  *
  * @example
  * ```typescript
- * const client = new MerkleKVClient('localhost', 7878);
+ * const client = new MerkleKVClient('localhost', 7379);
  * await client.connect();
  *
  * await client.set('user:123', 'john_doe');
@@ -31,7 +31,7 @@ export declare class MerkleKVClient {
      * Create a new MerkleKV client.
      *
      * @param host - Server hostname (default: 'localhost')
-     * @param port - Server port (default: 7878)
+     * @param port - Server port (default: 7379)
      * @param timeout - Connection timeout in milliseconds (default: 5000)
      */
     constructor(host?: string, port?: number, timeout?: number);

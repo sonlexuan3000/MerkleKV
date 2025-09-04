@@ -3,6 +3,7 @@ Synchronous MerkleKV client implementation.
 """
 
 import socket
+from typing import Optional
 import time
 from typing import Optional
 
@@ -35,7 +36,7 @@ class MerkleKVClient:
     and performing basic operations like GET, SET, and DELETE.
     
     Example:
-        client = MerkleKVClient("localhost", 7878)
+        client = MerkleKVClient("localhost", 7379)
         client.connect()
         
         client.set("user:123", "john_doe")
@@ -45,13 +46,13 @@ class MerkleKVClient:
         client.close()
     """
     
-    def __init__(self, host: str = "localhost", port: int = 7878, timeout: float = 5.0):
+    def __init__(self, host: str = "localhost", port: int = 7379, timeout: float = 5.0):
         """
         Initialize the MerkleKV client.
         
         Args:
             host: Server hostname (default: "localhost")
-            port: Server port (default: 7878)
+            port: Server port (default: 7379)
             timeout: Socket timeout in seconds (default: 5.0)
         """
         self.host = host
@@ -112,10 +113,30 @@ class MerkleKVClient:
         try:
             # Send command with CRLF termination
             message = f"{command}\r\n".encode('utf-8')
-            self._socket.send(message)
+            self._socket.sendall(message)
             
-            # Read response (up to 64KB for large values)
-            response = self._socket.recv(65536).decode('utf-8').strip()
+            # Read response line by line until we get CRLF
+            # Handle large responses by reading until we find CRLF
+            self._socket.settimeout(self.timeout)
+            buffer = b''
+            
+            # For potentially large responses, read in chunks until we find CRLF
+            while True:
+                try:
+                    chunk = self._socket.recv(4096)
+                    if not chunk:
+                        raise ConnectionError("Connection closed by server")
+                    buffer += chunk
+                    
+                    # Look for CRLF terminator
+                    crlf_pos = buffer.find(b'\r\n')
+                    if crlf_pos != -1:
+                        # Found complete response
+                        response = buffer[:crlf_pos].decode('utf-8')
+                        break
+                        
+                except socket.timeout:
+                    raise TimeoutError(f"Operation timed out after {self.timeout} seconds")
             
             # Check for protocol errors
             if response.startswith("ERROR "):
@@ -138,24 +159,46 @@ class MerkleKVClient:
             key: The key to retrieve
             
         Returns:
-            The value if key exists, None if key doesn't exist
+            The value if found, None if not found
             
         Raises:
-            ConnectionError: If not connected or connection fails
+            ValueError: If key is empty
+            ConnectionError: If connection fails
             TimeoutError: If operation times out
             ProtocolError: If server returns an error
         """
         if not key:
             raise ValueError("Key cannot be empty")
         
-        response = self._send_command(f"GET {key}")
+        # Retry logic for potential server state corruption with large values
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self._send_command(f"GET {key}")
+                
+                if response == "NOT_FOUND":
+                    return None
+                elif response.startswith("VALUE "):
+                    return response[6:]  # Remove "VALUE " prefix
+                elif response == "(null)":  # Alternative null response format
+                    return None
+                else:
+                    # If we get an unexpected response that looks like corruption,
+                    # try reconnecting and retrying (server state corruption workaround)
+                    if "Unknown command:" in response and attempt < max_retries - 1:
+                        self.close()
+                        self.connect()
+                        continue
+                    raise ProtocolError(f"Unexpected response: {response}")
+            except (ConnectionError, ProtocolError) as e:
+                if attempt < max_retries - 1:
+                    # Reconnect and retry for potential server state issues
+                    self.close()
+                    self.connect()
+                    continue
+                raise e
         
-        if response == "NOT_FOUND":
-            return None
-        elif response.startswith("VALUE "):
-            return response[6:]  # Remove "VALUE " prefix
-        else:
-            raise ProtocolError(f"Unexpected response: {response}")
+        raise ProtocolError(f"Failed to get key '{key}' after {max_retries} attempts")
     
     def set(self, key: str, value: str) -> bool:
         """
@@ -183,6 +226,12 @@ class MerkleKVClient:
             response = self._send_command(f"SET {key} {value}")
         
         if response == "OK":
+            # Workaround for server state corruption with large values
+            # Reconnect if the total command size is large to prevent parser state corruption
+            total_command_size = len(f"SET {key} {value}") 
+            if total_command_size > 1024:  # Conservative threshold
+                self.close()
+                self.connect()
             return True
         else:
             raise ProtocolError(f"Unexpected response: {response}")
@@ -205,7 +254,7 @@ class MerkleKVClient:
         if not key:
             raise ValueError("Key cannot be empty")
         
-        response = self._send_command(f"DELETE {key}")
+        response = self._send_command(f"DEL {key}")
         
         if response == "OK":
             return True

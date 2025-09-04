@@ -29,7 +29,7 @@ import { MerkleKVClient } from '@merklekv/client';
 
 async function example() {
     // Connect to MerkleKV server
-    const client = new MerkleKVClient('localhost', 7878);
+    const client = new MerkleKVClient('localhost', 7379);
     await client.connect();
     
     // Set and get values
@@ -52,7 +52,7 @@ const { MerkleKVClient } = require('@merklekv/client');
 
 async function example() {
     // Connect to MerkleKV server
-    const client = new MerkleKVClient('localhost', 7878);
+    const client = new MerkleKVClient('localhost', 7379);
     await client.connect();
     
     // Set and get values
@@ -79,7 +79,7 @@ new MerkleKVClient(host?: string, port?: number, timeout?: number)
 ```
 
 - `host`: Server hostname (default: 'localhost')
-- `port`: Server port (default: 7878)
+- `port`: Server port (default: 7379)
 - `timeout`: Connection and operation timeout in milliseconds (default: 5000)
 
 #### Methods
@@ -97,7 +97,7 @@ new MerkleKVClient(host?: string, port?: number, timeout?: number)
 import { MerkleKVClient, ConnectionError, TimeoutError, ProtocolError } from '@merklekv/client';
 
 try {
-    const client = new MerkleKVClient('localhost', 7878, 10000);
+    const client = new MerkleKVClient('localhost', 7379, 10000);
     await client.connect();
     
     await client.set('test', 'value');
@@ -128,7 +128,7 @@ try {
 
 ```typescript
 // Set custom timeout for slow networks
-const client = new MerkleKVClient('remote-server', 7878, 15000); // 15 second timeout
+const client = new MerkleKVClient('remote-server', 7379, 15000); // 15 second timeout
 ```
 
 ### Large Values

@@ -14,7 +14,7 @@ import java.util.logging.Level;
  * 
  * Example usage:
  * <pre>
- * AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7878);
+ * AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7379);
  * try {
  *     client.setAsync("key1", "value1")
  *         .thenCompose(v -> client.getAsync("key1"))

@@ -17,7 +17,7 @@ use log::{debug, info};
 /// use merklekv_client::{Client, Result};
 ///
 /// fn main() -> Result<()> {
-///     let mut client = Client::connect("127.0.0.1:7878")?;
+///     let mut client = Client::connect("127.0.0.1:7379")?;
 ///     
 ///     client.set("key", "value")?;
 ///     let value = client.get("key")?;
@@ -44,7 +44,7 @@ impl Client {
     /// ```rust,no_run
     /// use merklekv_client::Client;
     /// 
-    /// let client = Client::connect("localhost:7878")?;
+    /// let client = Client::connect("localhost:7379")?;
     /// # Ok::<(), merklekv_client::Error>(())
     /// ```
     pub fn connect<S: Into<String>>(addr: S) -> Result<Self> {

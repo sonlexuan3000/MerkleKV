@@ -1,0 +1,12 @@
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.GeneratedMSBuildEditorConfig.editorconfig
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.AssemblyInfoInputs.cache
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.AssemblyInfo.cs
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.csproj.CoreCompileInputs.cache
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.sourcelink.json
+/workspaces/MerkleKV/clients/dotnet/src/bin/Debug/net6.0/MerkleKV.Client.deps.json
+/workspaces/MerkleKV/clients/dotnet/src/bin/Debug/net6.0/MerkleKV.Client.dll
+/workspaces/MerkleKV/clients/dotnet/src/bin/Debug/net6.0/MerkleKV.Client.pdb
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.dll
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/refint/MerkleKV.Client.dll
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/MerkleKV.Client.pdb
+/workspaces/MerkleKV/clients/dotnet/src/obj/Debug/net6.0/ref/MerkleKV.Client.dll

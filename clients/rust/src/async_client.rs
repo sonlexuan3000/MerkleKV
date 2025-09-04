@@ -62,7 +62,7 @@ impl ConnectionPool {
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
-///     let mut client = AsyncClient::connect("127.0.0.1:7878").await?;
+///     let mut client = AsyncClient::connect("127.0.0.1:7379").await?;
 ///     
 ///     client.set("key", "value").await?;
 ///     let value = client.get("key").await?;
@@ -90,7 +90,7 @@ impl AsyncClient {
     /// 
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), merklekv_client::Error> {
-    /// let client = AsyncClient::connect("localhost:7878").await?;
+    /// let client = AsyncClient::connect("localhost:7379").await?;
     /// # Ok(())
     /// # }
     /// ```

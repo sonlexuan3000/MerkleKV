@@ -10,10 +10,10 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	assert.Equal(t, "localhost", client.host)
-	assert.Equal(t, 7878, client.port)
+	assert.Equal(t, 7379, client.port)
 	assert.Equal(t, 5*time.Second, client.timeout)
 	assert.False(t, client.IsConnected())
 }
@@ -55,7 +55,7 @@ func TestConnectWithContextTimeout(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	// Close before connecting should not error
 	err := client.Close()
@@ -64,14 +64,14 @@ func TestClose(t *testing.T) {
 }
 
 func TestGetEmptyKey(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	_, err := client.Get("")
 	assert.Equal(t, ErrEmptyKey, err)
 }
 
 func TestGetWithContextEmptyKey(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	ctx := context.Background()
 	
 	_, err := client.GetWithContext(ctx, "")
@@ -79,14 +79,14 @@ func TestGetWithContextEmptyKey(t *testing.T) {
 }
 
 func TestSetEmptyKey(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	err := client.Set("", "value")
 	assert.Equal(t, ErrEmptyKey, err)
 }
 
 func TestSetWithContextEmptyKey(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	ctx := context.Background()
 	
 	err := client.SetWithContext(ctx, "", "value")
@@ -94,14 +94,14 @@ func TestSetWithContextEmptyKey(t *testing.T) {
 }
 
 func TestDeleteEmptyKey(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	err := client.Delete("")
 	assert.Equal(t, ErrEmptyKey, err)
 }
 
 func TestDeleteWithContextEmptyKey(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	ctx := context.Background()
 	
 	err := client.DeleteWithContext(ctx, "")
@@ -109,7 +109,7 @@ func TestDeleteWithContextEmptyKey(t *testing.T) {
 }
 
 func TestOperationsNotConnected(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	// Test all operations fail when not connected
 	_, err := client.Get("key")
@@ -126,7 +126,7 @@ func TestOperationsNotConnected(t *testing.T) {
 }
 
 func TestContextOperationsNotConnected(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	ctx := context.Background()
 	
 	// Test all context operations fail when not connected

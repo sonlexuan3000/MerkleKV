@@ -34,7 +34,7 @@ import (
 
 func main() {
     // Create client
-    client := merklekv.New("localhost", 7878)
+    client := merklekv.New("localhost", 7379)
     
     // Connect to server
     err := client.Connect()
@@ -69,10 +69,10 @@ func main() {
 
 ```go
 // Create client with default 5-second timeout
-client := merklekv.New("localhost", 7878)
+client := merklekv.New("localhost", 7379)
 
 // Create client with custom timeout
-client := merklekv.NewWithTimeout("localhost", 7878, 10*time.Second)
+client := merklekv.NewWithTimeout("localhost", 7379, 10*time.Second)
 ```
 
 ### Connection Management
@@ -174,7 +174,7 @@ if err != nil {
 
 ```go
 // Create client with 10-second timeout
-client := merklekv.NewWithTimeout("localhost", 7878, 10*time.Second)
+client := merklekv.NewWithTimeout("localhost", 7379, 10*time.Second)
 
 // Or use context for per-operation timeouts
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -244,7 +244,7 @@ go test
 # Run tests with coverage
 go test -cover
 
-# Run integration tests (requires running MerkleKV server on localhost:7878)
+# Run integration tests (requires running MerkleKV server on localhost:7379)
 go test -tags=integration
 
 # Run example

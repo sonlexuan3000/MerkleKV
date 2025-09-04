@@ -11,7 +11,7 @@ def sync_example():
     print("=== Synchronous Client Example ===")
     
     # Create client
-    client = MerkleKVClient("localhost", 7878)
+    client = MerkleKVClient("localhost", 7379)
     
     try:
         # Connect to server
@@ -53,7 +53,7 @@ async def async_example():
     print("\n=== Asynchronous Client Example ===")
     
     # Create async client
-    client = AsyncMerkleKVClient("localhost", 7878)
+    client = AsyncMerkleKVClient("localhost", 7379)
     
     try:
         # Connect to server
@@ -96,7 +96,7 @@ def context_manager_example():
     
     try:
         # Using sync client as context manager
-        with MerkleKVClient("localhost", 7878) as client:
+        with MerkleKVClient("localhost", 7379) as client:
             client.set("context:key", "context_value")
             value = client.get("context:key")
             print(f"context:key = {value}")
@@ -113,7 +113,7 @@ async def async_context_manager_example():
     
     try:
         # Using async client as context manager
-        async with AsyncMerkleKVClient("localhost", 7878) as client:
+        async with AsyncMerkleKVClient("localhost", 7379) as client:
             await client.set("async_context:key", "async_context_value")
             value = await client.get("async_context:key")
             print(f"async_context:key = {value}")

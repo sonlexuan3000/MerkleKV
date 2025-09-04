@@ -10,8 +10,8 @@ import java.util.concurrent.ExecutionException;
  */
 public class AsyncExample {
     public static void main(String[] args) {
-        try (AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7878)) {
-            System.out.println("Connected to MerkleKV server at localhost:7878");
+        try (AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7379)) {
+            System.out.println("Connected to MerkleKV server at localhost:7379");
             
             // Async operations with CompletableFuture
             CompletableFuture<Void> pipeline = client

@@ -196,22 +196,19 @@ impl Protocol {
             return Err(anyhow!("Empty command"));
         }
         
-        // Parse command based on the first word (case-insensitive)
-
-        // Check for invalid characters (tabs, newlines within the command)
-        if input.contains('\t') {
-            return Err(anyhow!("Invalid character: tab character not allowed"));
-        }
-        if input.contains('\n') {
-            return Err(anyhow!("Invalid character: newline character not allowed"));
-        }
-
         // Split command into parts - for SET we need to split into exactly 3 parts
         // to allow spaces in values. For GET/DELETE, we can split normally.
         let first_space = input.find(' ');
         
         if first_space.is_none() {
-            // Single word command
+            // Single word command - check for invalid characters in command only
+            if input.contains('\t') {
+                return Err(anyhow!("Invalid character: tab character not allowed in command"));
+            }
+            if input.contains('\n') {
+                return Err(anyhow!("Invalid character: newline character not allowed in command"));
+            }
+            
             match input.to_uppercase().as_str() {
                 "GET" | "SET" | "DELETE" | "DEL" | "SCAN" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
@@ -230,6 +227,14 @@ impl Protocol {
         let command = &input[..first_space.unwrap()];
         let rest = &input[first_space.unwrap() + 1..];
 
+        // Check for invalid characters in command only
+        if command.contains('\t') {
+            return Err(anyhow!("Invalid character: tab character not allowed in command"));
+        }
+        if command.contains('\n') {
+            return Err(anyhow!("Invalid character: newline character not allowed in command"));
+        }
+
         // Parse command based on the first word (case-insensitive)
         match command.to_uppercase().as_str() {
             "GET" => {
@@ -238,6 +243,13 @@ impl Protocol {
                 }
                 if rest.contains(' ') {
                     return Err(anyhow!("GET command accepts only one argument"));
+                }
+                // Check for invalid characters in key
+                if rest.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if rest.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
                 }
                 Ok(Command::Get {
                     key: rest.to_string(),
@@ -255,6 +267,19 @@ impl Protocol {
                     return Err(anyhow!("SET command key cannot be empty"));
                 }
                 
+                // Check for invalid characters in key only (tabs allowed in values; newlines reserved for CRLF framing)
+                if key.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if key.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                }
+                
+                // Newlines are forbidden in values due to CRLF protocol framing
+                if value.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in value"));
+                }
+                
                 Ok(Command::Set {
                     key: key.to_string(),
                     value: value.to_string(),
@@ -268,6 +293,13 @@ impl Protocol {
                 if rest.contains(' ') {
                     return Err(anyhow!("DELETE command accepts only one argument"));
                 }
+                // Check for invalid characters in key
+                if rest.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if rest.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                }
                 Ok(Command::Delete {
                     key: rest.to_string(),
                 })
@@ -278,6 +310,13 @@ impl Protocol {
                 }
                 if rest.contains(' ') {
                     return Err(anyhow!("SCAN command accepts only one argument"));
+                }
+                // Check for invalid characters in prefix
+                if rest.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in prefix"));
+                }
+                if rest.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in prefix"));
                 }
                 Ok(Command::Scan {
                     prefix: rest.to_string(),
@@ -294,6 +333,14 @@ impl Protocol {
                 // Check if what appears to be the key is actually a number
                 if parts[0].parse::<i64>().is_ok() && parts.len() == 1 {
                     return Err(anyhow!("INC command requires a key"));
+                }
+                
+                // Check for invalid characters in key
+                if parts[0].contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if parts[0].contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
                 }
                 
                 // Parse optional amount parameter
@@ -324,6 +371,14 @@ impl Protocol {
                     return Err(anyhow!("DEC command requires a key"));
                 }
                 
+                // Check for invalid characters in key
+                if parts[0].contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if parts[0].contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                }
+                
                 // Parse optional amount parameter
                 let amount = if parts.len() > 1 {
                     match parts[1].parse::<i64>() {
@@ -350,6 +405,20 @@ impl Protocol {
                 if key.is_empty() {
                     return Err(anyhow!("APPEND command key cannot be empty"));
                 }
+                
+                // Check for invalid characters in key only (tabs allowed in values; newlines reserved for CRLF framing)
+                if key.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if key.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                }
+                
+                // Newlines are forbidden in values due to CRLF protocol framing
+                if value.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in value"));
+                }
+                
                 // Allow empty values for APPEND
                 
                 Ok(Command::Append {
@@ -368,6 +437,20 @@ impl Protocol {
                 if key.is_empty() {
                     return Err(anyhow!("PREPEND command key cannot be empty"));
                 }
+                
+                // Check for invalid characters in key only (tabs allowed in values; newlines reserved for CRLF framing)
+                if key.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if key.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                }
+                
+                // Newlines are forbidden in values due to CRLF protocol framing
+                if value.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in value"));
+                }
+                
                 // Allow empty values for PREPEND
                 
                 Ok(Command::Prepend {
@@ -387,6 +470,16 @@ impl Protocol {
                 
                 if keys.is_empty() {
                     return Err(anyhow!("MGET command requires at least one key"));
+                }
+                
+                // Check for invalid characters in all keys
+                for key in &keys {
+                    if key.contains('\t') {
+                        return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                    }
+                    if key.contains('\n') {
+                        return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                    }
                 }
                 
                 Ok(Command::MultiGet { keys })
@@ -409,6 +502,15 @@ impl Protocol {
                 while i < args.len() {
                     let key = args[i].to_string();
                     let value = args[i + 1].to_string();
+                    
+                    // Check for invalid characters in key only (values can contain control characters)
+                    if key.contains('\t') {
+                        return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                    }
+                    if key.contains('\n') {
+                        return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                    }
+                    
                     pairs.push((key, value));
                     i += 2;
                 }

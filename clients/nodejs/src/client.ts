@@ -41,7 +41,7 @@ class LineTransform extends Transform {
  * 
  * @example
  * ```typescript
- * const client = new MerkleKVClient('localhost', 7878);
+ * const client = new MerkleKVClient('localhost', 7379);
  * await client.connect();
  * 
  * await client.set('user:123', 'john_doe');
@@ -64,10 +64,10 @@ export class MerkleKVClient {
      * Create a new MerkleKV client.
      * 
      * @param host - Server hostname (default: 'localhost')
-     * @param port - Server port (default: 7878)
+     * @param port - Server port (default: 7379)
      * @param timeout - Connection timeout in milliseconds (default: 5000)
      */
-    constructor(host = 'localhost', port = 7878, timeout = 5000) {
+    constructor(host = 'localhost', port = 7379, timeout = 5000) {
         this.host = host;
         this.port = port;
         this.timeout = timeout;

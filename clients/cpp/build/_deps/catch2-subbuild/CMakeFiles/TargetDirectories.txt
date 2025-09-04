@@ -1,0 +1,3 @@
+/workspaces/MerkleKV/clients/cpp/build/_deps/catch2-subbuild/CMakeFiles/catch2-populate.dir
+/workspaces/MerkleKV/clients/cpp/build/_deps/catch2-subbuild/CMakeFiles/edit_cache.dir
+/workspaces/MerkleKV/clients/cpp/build/_deps/catch2-subbuild/CMakeFiles/rebuild_cache.dir

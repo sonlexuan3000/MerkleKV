@@ -7,7 +7,7 @@ to MerkleKV servers and performing basic operations.
 
 Basic usage:
 
-	client := merklekv.New("localhost", 7878)
+	client := merklekv.New("localhost", 7379)
 	err := client.Connect()
 	if err != nil {
 		log.Fatal(err)

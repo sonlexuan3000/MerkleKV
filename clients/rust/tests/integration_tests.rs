@@ -14,7 +14,7 @@ mod sync_client_tests {
     #[test]
     fn test_client_creation() {
         // Test that we can create client instances with proper configuration
-        let addr = "127.0.0.1:7878";
+        let addr = "127.0.0.1:7379";
         
         // Test address validation
         assert!(!addr.is_empty());
@@ -210,7 +210,7 @@ mod async_client_tests {
     #[tokio::test]
     async fn test_async_client_creation() {
         // Test async client configuration
-        let addr = "127.0.0.1:7878";
+        let addr = "127.0.0.1:7379";
         let pool_size = 10;
         let timeout = Duration::from_secs(30);
         
