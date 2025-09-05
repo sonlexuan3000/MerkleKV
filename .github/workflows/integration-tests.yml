@@ -167,6 +167,20 @@ jobs:
         env:
           RUST_LOG: info
 
+      - name: Run Minimal Fixes Tests
+        run: |
+          cd tests/integration
+          python -m pytest test_minimal_fixes.py -v --tb=short --junitxml=minimal_fixes_results.xml
+        env:
+          RUST_LOG: info
+
+      - name: Run Server Fixes Tests
+        run: |
+          cd tests/integration
+          python -m pytest test_server_fixes.py -v --tb=short --junitxml=server_fixes_results.xml
+        env:
+          RUST_LOG: info
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()

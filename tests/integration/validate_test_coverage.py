@@ -39,7 +39,9 @@ def main():
             "test_concurrency.py",
             "test_statistical_commands.py",
             "test_error_handling.py",
-            "test_simple_server.py"
+            "test_simple_server.py",
+            "test_minimal_fixes.py",
+            "test_server_fixes.py"
         ],
         "Replication": [
             "test_replication.py",
