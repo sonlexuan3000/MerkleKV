@@ -20,7 +20,7 @@ class AsyncMerkleKVClientTest {
         assertDoesNotThrow(() -> {
             // Test parameter validation for async client
             String host = "localhost";
-            int port = 7878;
+            int port = 7379;
             int timeout = 30000;
             int maxConnections = 10;
             
@@ -269,12 +269,12 @@ class AsyncMerkleKVClientTest {
     void testAsyncClientProperties() {
         // Test property access for async client
         String host = "localhost";
-        int port = 7878;
+        int port = 7379;
         int timeout = 30000;
         int maxConnections = 10;
         
         assertEquals("localhost", host);
-        assertEquals(7878, port);
+        assertEquals(7379, port);
         assertEquals(30000, timeout);
         assertEquals(10, maxConnections);
     }

@@ -19,7 +19,7 @@ class MerkleKVClientTest {
         assertDoesNotThrow(() -> {
             // Test basic parameter validation
             String host = "localhost";
-            int port = 7878;
+            int port = 7379;
             int timeout = 30000;
             
             assertNotNull(host);
@@ -125,11 +125,11 @@ class MerkleKVClientTest {
     void testClientProperties() {
         // Test property values
         String host = "localhost";
-        int port = 7878;
+        int port = 7379;
         int timeout = 30000;
         
         assertEquals("localhost", host);
-        assertEquals(7878, port);
+        assertEquals(7379, port);
         assertEquals(30000, timeout);
     }
 

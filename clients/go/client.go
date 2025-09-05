@@ -28,7 +28,7 @@ type Client struct {
 //
 // Parameters:
 //   - host: Server hostname (e.g., "localhost")
-//   - port: Server port (e.g., 7878)
+//   - port: Server port (e.g., 7379)
 //
 // Returns a new Client instance. Call Connect() to establish connection.
 func New(host string, port int) *Client {
@@ -43,7 +43,7 @@ func New(host string, port int) *Client {
 //
 // Parameters:
 //   - host: Server hostname (e.g., "localhost")
-//   - port: Server port (e.g., 7878)
+//   - port: Server port (e.g., 7379)
 //   - timeout: Connection and operation timeout
 //
 // Returns a new Client instance with custom timeout.
@@ -272,11 +272,14 @@ func (c *Client) DeleteWithContext(ctx context.Context, key string) error {
 		return err
 	}
 
-	if response != "OK" {
+	switch response {
+	case "DELETED":
+		return nil
+	case "NOT_FOUND":
+		return nil
+	default:
 		return &ProtocolError{Op: "delete", Message: fmt.Sprintf("unexpected response: %s", response)}
 	}
-
-	return nil
 }
 
 // Ping sends a ping command to test connectivity.

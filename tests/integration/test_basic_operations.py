@@ -48,7 +48,7 @@ class TestBasicOperations:
         
         # Delete the key
         response = connected_client.delete("delete_key")
-        assert response == "OK"
+        assert response == "DELETED"  # Server returns DELETED for existing keys
         
         # Verify it's gone
         response = connected_client.get("delete_key")
@@ -57,7 +57,7 @@ class TestBasicOperations:
     def test_delete_nonexistent_key(self, connected_client: MerkleKVClient):
         """Test deleting a key that doesn't exist."""
         response = connected_client.delete("nonexistent_key")
-        assert response == "OK"  # DELETE should succeed even if key doesn't exist
+        assert response == "NOT_FOUND"  # Server returns NOT_FOUND for non-existing keys
     
     def test_multiple_operations_sequence(self, connected_client: MerkleKVClient):
         """Test a sequence of multiple operations."""
@@ -79,7 +79,7 @@ class TestBasicOperations:
         
         # Delete one key
         response = connected_client.delete("key2")
-        assert response == "OK"
+        assert response == "DELETED"  # Server returns DELETED for existing keys
         
         # Verify deleted key is gone
         response = connected_client.get("key2")
@@ -155,7 +155,7 @@ class TestBasicOperations:
         assert response == "VALUE value"
         
         response = connected_client.send_command("delete case_test")
-        assert response == "OK"
+        assert response == "DELETED"  # Server returns DELETED for existing keys
         
         # Test mixed case commands
         response = connected_client.send_command("SeT mixed_case value")
@@ -165,7 +165,7 @@ class TestBasicOperations:
         assert response == "VALUE value"
         
         response = connected_client.send_command("DeLeTe mixed_case")
-        assert response == "OK"
+        assert response == "DELETED"  # Server returns DELETED for existing keys
     
     def test_del_alias_for_delete(self, connected_client: MerkleKVClient):
         """Test that DEL is an alias for DELETE."""
@@ -173,7 +173,7 @@ class TestBasicOperations:
         
         # Use DEL alias
         response = connected_client.send_command("DEL del_test_key")
-        assert response == "OK"
+        assert response == "DELETED"  # Server returns DELETED for existing keys
         
         # Verify key is deleted
         response = connected_client.get("del_test_key")

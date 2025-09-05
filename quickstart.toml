@@ -1,9 +1,12 @@
-node_id = "quickstart-node"
+host = "127.0.0.1"
+port = 7379
+storage_path = "data"
+engine = "rwlock"
+sync_interval_seconds = 60
 
-[network]
-bind_address = "127.0.0.1"
-bind_port = 7878
-
-[mqtt]
-broker_address = "tcp://test.mosquitto.org:1883"
+[replication]
+enabled = false
+mqtt_broker = "test.mosquitto.org"
+mqtt_port = 1883
 topic_prefix = "quickstart-merkle-kv"
+client_id = "quickstart-node"

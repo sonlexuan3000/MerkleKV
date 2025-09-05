@@ -28,7 +28,7 @@ pip install merklekv
 from merklekv import MerkleKVClient
 
 # Connect to MerkleKV server
-client = MerkleKVClient("localhost", 7878)
+client = MerkleKVClient("localhost", 7379)
 client.connect()
 
 # Set and get values
@@ -51,7 +51,7 @@ from merklekv import AsyncMerkleKVClient
 
 async def main():
     # Connect to MerkleKV server
-    client = AsyncMerkleKVClient("localhost", 7878)
+    client = AsyncMerkleKVClient("localhost", 7379)
     await client.connect()
     
     # Set and get values
@@ -74,7 +74,7 @@ asyncio.run(main())
 from merklekv import MerkleKVClient
 
 # Automatic connection management
-with MerkleKVClient("localhost", 7878) as client:
+with MerkleKVClient("localhost", 7379) as client:
     client.set("temp:key", "temp_value")
     value = client.get("temp:key")
     print(f"Value: {value}")
@@ -88,7 +88,7 @@ import asyncio
 from merklekv import AsyncMerkleKVClient
 
 async def main():
-    async with AsyncMerkleKVClient("localhost", 7878) as client:
+    async with AsyncMerkleKVClient("localhost", 7379) as client:
         await client.set("temp:async", "async_value")
         value = await client.get("temp:async")
         print(f"Async value: {value}")
@@ -104,11 +104,11 @@ asyncio.run(main())
 #### Constructor
 
 ```python
-MerkleKVClient(host="localhost", port=7878, timeout=5.0)
+MerkleKVClient(host="localhost", port=7379, timeout=5.0)
 ```
 
 - `host`: Server hostname (default: "localhost")
-- `port`: Server port (default: 7878)  
+- `port`: Server port (default: 7379)  
 - `timeout`: Socket timeout in seconds (default: 5.0)
 
 #### Methods
@@ -136,7 +136,7 @@ Same API as `MerkleKVClient` but with async/await:
 from merklekv import MerkleKVClient, ConnectionError, TimeoutError, ProtocolError
 
 try:
-    client = MerkleKVClient("localhost", 7878, timeout=10.0)
+    client = MerkleKVClient("localhost", 7379, timeout=10.0)
     client.connect()
     
     client.set("test", "value")

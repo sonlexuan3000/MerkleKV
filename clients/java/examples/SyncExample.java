@@ -8,8 +8,8 @@ import io.merklekv.client.*;
 public class SyncExample {
     public static void main(String[] args) {
         // Create client with default settings
-        try (MerkleKVClient client = new MerkleKVClient("localhost", 7878)) {
-            System.out.println("Connected to MerkleKV server at localhost:7878");
+        try (MerkleKVClient client = new MerkleKVClient("localhost", 7379)) {
+            System.out.println("Connected to MerkleKV server at localhost:7379");
             
             // Set some key-value pairs
             System.out.println("Setting key-value pairs...");

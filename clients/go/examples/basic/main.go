@@ -13,7 +13,7 @@ func main() {
 	fmt.Println("=== MerkleKV Go Client Example ===")
 
 	// Create client
-	client := merklekv.New("localhost", 7878)
+	client := merklekv.New("localhost", 7379)
 
 	// Connect to server
 	err := client.Connect()

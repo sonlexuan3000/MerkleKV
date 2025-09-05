@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     
     // Get server address from environment or use default
     let server_addr = env::var("MERKLEKV_SERVER")
-        .unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+        .unwrap_or_else(|_| "127.0.0.1:7379".to_string());
     
     println!("MerkleKV Asynchronous Client Example");
     println!("====================================");

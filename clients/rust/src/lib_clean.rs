@@ -22,7 +22,7 @@
 //! use merklekv_client::{Client, Result};
 //!
 //! fn main() -> Result<()> {
-//!     let mut client = Client::connect("127.0.0.1:7878")?;
+//!     let mut client = Client::connect("127.0.0.1:7379")?;
 //!     
 //!     // Set a key-value pair
 //!     client.set("hello", "world")?;
@@ -46,7 +46,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
-//!     let mut client = AsyncClient::connect("127.0.0.1:7878").await?;
+//!     let mut client = AsyncClient::connect("127.0.0.1:7379").await?;
 //!     
 //!     // Set a key-value pair
 //!     client.set("async_hello", "async_world").await?;

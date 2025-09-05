@@ -56,7 +56,7 @@ class MockServer {
 
 describe('MerkleKVClient', () => {
     let mockServer: MockServer;
-    const testPort = 17878;
+    const testPort = 17379;
 
     beforeEach(async () => {
         mockServer = new MockServer();

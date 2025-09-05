@@ -42,7 +42,7 @@ implementation 'io.merklekv:merklekv-client-java:1.0.0'
 import io.merklekv.client.MerkleKVClient;
 import io.merklekv.client.MerkleKVException;
 
-try (MerkleKVClient client = new MerkleKVClient("localhost", 7878)) {
+try (MerkleKVClient client = new MerkleKVClient("localhost", 7379)) {
     // Set a key-value pair
     client.set("user:123", "Alice");
     
@@ -65,7 +65,7 @@ try (MerkleKVClient client = new MerkleKVClient("localhost", 7878)) {
 import io.merklekv.client.AsyncMerkleKVClient;
 import io.merklekv.client.MerkleKVException;
 
-try (AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7878)) {
+try (AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7379)) {
     // Chain async operations
     client.setAsync("user:456", "Bob")
         .thenCompose(v -> client.getAsync("user:456"))
@@ -141,16 +141,16 @@ try {
 
 ```java
 // 10 second timeout
-MerkleKVClient client = new MerkleKVClient("localhost", 7878, 10000);
+MerkleKVClient client = new MerkleKVClient("localhost", 7379, 10000);
 
 // Async client with custom connection pool
-AsyncMerkleKVClient asyncClient = new AsyncMerkleKVClient("localhost", 7878, 15000, 20);
+AsyncMerkleKVClient asyncClient = new AsyncMerkleKVClient("localhost", 7379, 15000, 20);
 ```
 
 ### Parallel Operations
 
 ```java
-try (AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7878)) {
+try (AsyncMerkleKVClient client = new AsyncMerkleKVClient("localhost", 7379)) {
     // Run multiple operations in parallel
     CompletableFuture<Void> set1 = client.setAsync("key1", "value1");
     CompletableFuture<Void> set2 = client.setAsync("key2", "value2");
@@ -204,7 +204,7 @@ String emoji = client.get("emoji"); // "🚀🌟⭐"
 This client implements the MerkleKV TCP protocol:
 - Commands are sent as UTF-8 text terminated with CRLF (`\r\n`)
 - Responses follow the format: `OK`, `NOT_FOUND`, `VALUE <data>`, or `ERROR <message>`
-- Default port is 7878
+- Default port is 7379
 
 ## Building from Source
 

@@ -42,7 +42,7 @@ tokio = { version = "1.0", features = ["full"] }
 use merklekv_client::{Client, Result};
 
 fn main() -> Result<()> {
-    let mut client = Client::connect("127.0.0.1:7878")?;
+    let mut client = Client::connect("127.0.0.1:7379")?;
     
     // Set a key-value pair
     client.set("hello", "world")?;
@@ -66,7 +66,7 @@ use merklekv_client::{AsyncClient, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut client = AsyncClient::connect("127.0.0.1:7878").await?;
+    let mut client = AsyncClient::connect("127.0.0.1:7379").await?;
     
     // Set a key-value pair
     client.set("async_hello", "async_world").await?;
@@ -100,11 +100,11 @@ use merklekv_client::{Client, Result};
 use std::time::Duration;
 
 // Connect with default settings
-let mut client = Client::connect("127.0.0.1:7878")?;
+let mut client = Client::connect("127.0.0.1:7379")?;
 
 // Connect with custom timeout
 let mut client = Client::connect_with_timeout(
-    "127.0.0.1:7878", 
+    "127.0.0.1:7379", 
     Duration::from_secs(10)
 )?;
 
@@ -124,11 +124,11 @@ use merklekv_client::{AsyncClient, Result};
 use std::time::Duration;
 
 // Connect with default settings
-let mut client = AsyncClient::connect("127.0.0.1:7878").await?;
+let mut client = AsyncClient::connect("127.0.0.1:7379").await?;
 
 // Connect with custom options
 let mut client = AsyncClient::connect_with_options(
-    "127.0.0.1:7878",
+    "127.0.0.1:7379",
     20,                           // pool size
     Duration::from_secs(30)       // timeout
 ).await?;
@@ -155,7 +155,7 @@ The library provides comprehensive error handling through the `Error` enum:
 ```rust
 use merklekv_client::{Client, Error};
 
-let mut client = Client::connect("127.0.0.1:7878")?;
+let mut client = Client::connect("127.0.0.1:7379")?;
 
 match client.get("nonexistent_key") {
     Ok(value) => println!("Found: {}", value),
@@ -213,7 +213,7 @@ MerkleKV uses a simple TCP-based text protocol:
 use merklekv_client::{Client, Result};
 
 fn basic_example() -> Result<()> {
-    let mut client = Client::connect("127.0.0.1:7878")?;
+    let mut client = Client::connect("127.0.0.1:7379")?;
     
     // String operations
     client.set("user:1", "Alice")?;
@@ -241,7 +241,7 @@ use merklekv_client::{AsyncClient, Result};
 
 #[tokio::main]
 async fn concurrent_example() -> Result<()> {
-    let mut client = AsyncClient::connect("127.0.0.1:7878").await?;
+    let mut client = AsyncClient::connect("127.0.0.1:7379").await?;
     
     // Concurrent individual operations
     let (result1, result2, result3) = tokio::join!(
@@ -305,7 +305,7 @@ cargo run --example sync_client
 cargo run --example async_client
 
 # With custom server address
-MERKLEKV_SERVER=192.168.1.100:7878 cargo run --example async_client
+MERKLEKV_SERVER=192.168.1.100:7379 cargo run --example async_client
 ```
 
 ## Testing

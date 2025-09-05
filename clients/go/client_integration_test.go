@@ -15,7 +15,7 @@ import (
 // Run with: go test -tags=integration
 
 func TestIntegrationBasicOperations(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	client.timeout = 10 * time.Second // Longer timeout for CI
 	
 	err := client.Connect()
@@ -53,7 +53,7 @@ func TestIntegrationBasicOperations(t *testing.T) {
 }
 
 func TestIntegrationContextOperations(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	ctx := context.Background()
 	err := client.ConnectWithContext(ctx)
@@ -76,7 +76,7 @@ func TestIntegrationContextOperations(t *testing.T) {
 }
 
 func TestIntegrationPing(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	err := client.Connect()
 	require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestIntegrationPing(t *testing.T) {
 }
 
 func TestIntegrationLargeValue(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	client.timeout = 15 * time.Second // Longer timeout for large data
 	
 	err := client.Connect()
@@ -116,7 +116,7 @@ func TestIntegrationLargeValue(t *testing.T) {
 }
 
 func TestIntegrationUnicode(t *testing.T) {
-	client := New("localhost", 7878)
+	client := New("localhost", 7379)
 	
 	err := client.Connect()
 	require.NoError(t, err)
@@ -132,4 +132,22 @@ func TestIntegrationUnicode(t *testing.T) {
 	retrievedValue, err := client.Get(unicodeKey)
 	require.NoError(t, err)
 	assert.Equal(t, unicodeValue, retrievedValue)
+}
+
+func TestDeleteResponseSemantics(t *testing.T) {
+	client := New("localhost", 7379)
+	err := client.Connect()
+	require.NoError(t, err)
+	defer client.Close()
+	
+	// Test DELETE on existing key returns no error (server returns DELETED)
+	err = client.Set("deltest", "value")
+	require.NoError(t, err)
+	
+	err = client.Delete("deltest")
+	assert.NoError(t, err)
+	
+	// Test DELETE on non-existing key returns no error (server returns NOT_FOUND)
+	err = client.Delete("nonexistent")
+	assert.NoError(t, err)
 }

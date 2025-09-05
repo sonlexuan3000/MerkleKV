@@ -47,6 +47,10 @@ def main():
         ],
         "Performance": [
             "test_benchmark.py"
+        ],
+        "Slow/Optional": [
+            "test_minimal_fixes.py",
+            "test_server_fixes.py"
         ]
     }
     

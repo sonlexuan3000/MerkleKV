@@ -16,7 +16,7 @@ class TestMerkleKVClient:
         """Test client initialization with default values."""
         client = MerkleKVClient()
         assert client.host == "localhost"
-        assert client.port == 7878
+        assert client.port == 7379
         assert client.timeout == 5.0
         assert not client.is_connected()
     
@@ -38,7 +38,7 @@ class TestMerkleKVClient:
         client.connect()
         
         assert client.is_connected()
-        mock_create_connection.assert_called_once_with(("localhost", 7878), timeout=5.0)
+        mock_create_connection.assert_called_once_with(("localhost", 7379), timeout=5.0)
     
     @patch('socket.create_connection')
     def test_connect_failure(self, mock_create_connection):
@@ -84,7 +84,7 @@ class TestMerkleKVClient:
         result = client.get("test_key")
         
         assert result == "test_value"
-        mock_socket.send.assert_called_with(b"GET test_key\r\n")
+        mock_socket.sendall.assert_called_with(b"GET test_key\r\n")
     
     @patch('socket.create_connection')
     def test_get_not_found(self, mock_create_connection):
@@ -133,7 +133,7 @@ class TestMerkleKVClient:
         result = client.set("test_key", "test_value")
         
         assert result is True
-        mock_socket.send.assert_called_with(b"SET test_key test_value\r\n")
+        mock_socket.sendall.assert_called_with(b"SET test_key test_value\r\n")
     
     @patch('socket.create_connection')
     def test_set_empty_value(self, mock_create_connection):
@@ -148,7 +148,7 @@ class TestMerkleKVClient:
         result = client.set("test_key", "")
         
         assert result is True
-        mock_socket.send.assert_called_with(b'SET test_key ""\r\n')
+        mock_socket.sendall.assert_called_with(b'SET test_key ""\r\n')
     
     def test_set_empty_key(self):
         """Test SET with empty key."""
@@ -170,7 +170,7 @@ class TestMerkleKVClient:
         result = client.delete("test_key")
         
         assert result is True
-        mock_socket.send.assert_called_with(b"DELETE test_key\r\n")
+        mock_socket.sendall.assert_called_with(b"DEL test_key\r\n")
     
     def test_delete_empty_key(self):
         """Test DELETE with empty key."""

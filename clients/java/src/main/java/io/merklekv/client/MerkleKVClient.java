@@ -12,7 +12,7 @@ import java.util.logging.Level;
  * 
  * Example usage:
  * <pre>
- * MerkleKVClient client = new MerkleKVClient("localhost", 7878);
+ * MerkleKVClient client = new MerkleKVClient("localhost", 7379);
  * try {
  *     client.set("key1", "value1");
  *     String value = client.get("key1");

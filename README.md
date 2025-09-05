@@ -22,13 +22,24 @@ MerkleKV is an eventually-consistent, distributed key-value database designed fo
   - [Quick Start Guide](#quick-start-guide)
   - [Installation & Setup](#installation--setup)
   - [Verification & Testing](#verification--testing)
-- [📚 Usage (Client API)](#-usage-client-api)
+- [📚 Official Client Libraries](#-official-client-libraries)
+  - [Python](#python)
+  - [Node.js](#nodejs)
+  - [Go](#go)
+  - [Java](#java)
+  - [Rust](#rust)
+  - [C#/.NET](#cnet)
+  - [C++](#c)
+  - [Ruby](#ruby)
+  - [PHP](#php)
+- [📡 Usage (Raw TCP Protocol)](#-usage-raw-tcp-protocol)
   - [Available Commands](#available-commands)
   - [Interactive Session Example](#interactive-session-example)
 - [⚙️ Configuration](#️-configuration)
   - [Configuration File Format](#configuration-file-format)
   - [Configuration Options Reference](#configuration-options-reference)
 - [🗺️ Roadmap & Implementation Issues](#️-roadmap--implementation-issues)
+- [Known Issues](#known-issues)
 - [🙌 Contributing](#-contributing)
 - [📜 License](#-license)
 
@@ -142,7 +153,7 @@ MerkleKV is a distributed key-value store designed around a peer-to-peer archite
 │  │ ┌─────────┐ │        │ ┌─────────┐ │        │ ┌─────────┐ │              │
 │  │ │TCP      │ │        │ │TCP      │ │        │ │TCP      │ │              │
 │  │ │Listener │ │        │ │Listener │ │        │ │Listener │ │              │
-│  │ │:7878    │ │        │ │:7879    │ │        │ │:7880    │ │              │
+│  │ │:7379    │ │        │ │:7879    │ │        │ │:7880    │ │              │
 │  │ └─────────┘ │        │ └─────────┘ │        │ └─────────┘ │              │
 │  └─────────────┘        └─────────────┘        └─────────────┘              │
 │         │                       │                       │                   │
@@ -444,7 +455,7 @@ node_id = "quickstart-node"
 
 [network]
 bind_address = "127.0.0.1"
-bind_port = 7878
+bind_port = 7379
 
 [mqtt]
 broker_address = "tcp://test.mosquitto.org:1883"
@@ -458,13 +469,13 @@ cargo run --release -- --config quickstart.toml
 #### 4. Test Your Setup
 ```bash
 # In a new terminal, test basic operations
-echo "SET hello world" | nc localhost 7878
+echo "SET hello world" | nc localhost 7379
 # Expected: OK
 
-echo "GET hello" | nc localhost 7878  
+echo "GET hello" | nc localhost 7379  
 # Expected: world
 
-echo "VERSION" | nc localhost 7878
+echo "VERSION" | nc localhost 7379
 # Expected: MerkleKV 1.0.0
 ```
 
@@ -595,7 +606,7 @@ echo "GET hello" | nc localhost 7379
    
    [network]
    bind_address = "127.0.0.1"
-   bind_port = 7878
+   bind_port = 7379
    
    [mqtt]
    broker_address = "tcp://localhost:1883"
@@ -615,7 +626,7 @@ echo "GET hello" | nc localhost 7379
 5. **Test the connection**
    ```bash
    # In another terminal
-   nc localhost 7878
+   nc localhost 7379
    
    # Try some commands
    SET hello world
@@ -635,7 +646,7 @@ For a more realistic setup with replication and anti-entropy:
    
    [network]
    bind_address = "127.0.0.1"
-   bind_port = 7878
+   bind_port = 7379
    
    [mqtt]
    broker_address = "tcp://localhost:1883"
@@ -664,7 +675,7 @@ For a more realistic setup with replication and anti-entropy:
    [anti_entropy]
    enabled = true
    interval_seconds = 60
-   peer_list = ["127.0.0.1:7878", "127.0.0.1:7880"]
+   peer_list = ["127.0.0.1:7379", "127.0.0.1:7880"]
    EOF
    
    # Node 3
@@ -683,7 +694,7 @@ For a more realistic setup with replication and anti-entropy:
    [anti_entropy]
    enabled = true
    interval_seconds = 60
-   peer_list = ["127.0.0.1:7878", "127.0.0.1:7879"]
+   peer_list = ["127.0.0.1:7379", "127.0.0.1:7879"]
    EOF
    ```
 
@@ -702,7 +713,7 @@ For a more realistic setup with replication and anti-entropy:
 3. **Test replication**
    ```bash
    # Connect to node 1
-   echo "SET user:alice \"Alice Johnson\"" | nc localhost 7878
+   echo "SET user:alice \"Alice Johnson\"" | nc localhost 7379
    
    # Connect to node 2 (different terminal)
    echo "GET user:alice" | nc localhost 7879  # Should return "Alice Johnson"
@@ -719,7 +730,7 @@ For a more realistic setup with replication and anti-entropy:
 netstat -tlnp | grep 787
 
 # Test connectivity to each node
-for port in 7878 7879 7880; do
+for port in 7379 7879 7880; do
   echo "Testing port $port..."
   echo "GET test" | nc localhost $port
 done
@@ -731,7 +742,7 @@ done
 mosquitto_sub -h localhost -t "cluster-merkle-kv/updates"
 
 # In another terminal, make changes
-echo "SET test:mqtt success" | nc localhost 7878
+echo "SET test:mqtt success" | nc localhost 7379
 
 # Should see MQTT messages in the subscriber
 ```
@@ -740,7 +751,7 @@ echo "SET test:mqtt success" | nc localhost 7878
 ```bash
 # Stop node 2 temporarily
 # Make changes to node 1
-echo "SET offline:test value" | nc localhost 7878
+echo "SET offline:test value" | nc localhost 7379
 
 # Restart node 2
 cargo run --release -- --config node2.toml
@@ -877,7 +888,7 @@ Tests can be configured via `conftest.py`:
 ```python
 # Default test configuration
 SERVER_HOST = "127.0.0.1" 
-SERVER_PORT = 7878
+SERVER_PORT = 7379
 SERVER_START_TIMEOUT = 10
 TEST_TIMEOUT = 30
 
@@ -931,7 +942,7 @@ def test_new_feature():
 ps aux | grep merkle
 
 # Check if the port is in use
-sudo lsof -i :7878
+sudo lsof -i :7379
 
 # Check firewall settings
 sudo ufw status
@@ -977,7 +988,225 @@ level = "warn"  # Reduce log verbosity
 
 ---
 
-## 📚 Usage (Client API)
+## 📚 Official Client Libraries
+
+MerkleKV provides official client libraries for 9 popular programming languages, making it easy to integrate with your applications. All clients implement the MerkleKV TCP protocol with consistent behavior across languages.
+
+### Python
+
+**Installation:**
+```bash
+pip install merklekv
+```
+
+**Quick Start:**
+```python
+from merklekv import MerkleKVClient
+
+with MerkleKVClient("localhost", 7379) as client:
+    client.set("user:123", "john_doe")    # Store key-value
+    value = client.get("user:123")         # Returns "john_doe"
+    client.delete("user:123")              # Remove key
+```
+
+**Documentation:** [`clients/python/README.md`](clients/python/README.md)
+
+### Node.js
+
+**Installation:**
+```bash
+npm install @merklekv/client
+```
+
+**Quick Start:**
+```javascript
+const { MerkleKVClient } = require('@merklekv/client');
+
+const client = new MerkleKVClient('localhost', 7379);
+await client.connect();
+
+await client.set('user:123', 'john_doe'); // Store key-value
+const value = await client.get('user:123'); // Returns 'john_doe'
+await client.delete('user:123');             // Remove key
+
+await client.close();
+```
+
+**Documentation:** [`clients/nodejs/README.md`](clients/nodejs/README.md)
+
+### Go
+
+**Installation:**
+```bash
+go get github.com/AI-Decenter/MerkleKV/clients/go
+```
+
+**Quick Start:**
+```go
+import merklekv "github.com/AI-Decenter/MerkleKV/clients/go"
+
+client := merklekv.New("localhost", 7379)
+defer client.Close()
+
+client.Connect()
+client.Set("user:123", "john_doe")    // Store key-value
+value, _ := client.Get("user:123")    // Returns "john_doe"
+client.Delete("user:123")             // Remove key
+```
+
+**Documentation:** [`clients/go/README.md`](clients/go/README.md)
+
+### Java
+
+**Installation:**
+```xml
+<dependency>
+    <groupId>io.merklekv</groupId>
+    <artifactId>merklekv-client-java</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+**Quick Start:**
+```java
+import io.merklekv.client.MerkleKVClient;
+
+try (MerkleKVClient client = new MerkleKVClient("localhost", 7379)) {
+    client.set("user:123", "john_doe");     // Store key-value
+    String value = client.get("user:123");  // Returns "john_doe"
+    client.delete("user:123");              // Remove key
+}
+```
+
+**Documentation:** [`clients/java/README.md`](clients/java/README.md)
+
+### Rust
+
+**Installation:**
+```toml
+[dependencies]
+merklekv-client = "1.0.0"
+```
+
+**Quick Start:**
+```rust
+use merklekv_client::Client;
+
+let mut client = Client::connect("127.0.0.1:7379")?;
+client.set("user:123", "john_doe")?;     // Store key-value
+let value = client.get("user:123")?;     // Returns Some("john_doe")
+client.delete("user:123")?;              // Remove key
+```
+
+**Documentation:** [`clients/rust/README.md`](clients/rust/README.md)
+
+### C#/.NET
+
+**Installation:**
+```bash
+dotnet add package MerkleKV.Client
+```
+
+**Quick Start:**
+```csharp
+using MerkleKV;
+
+using var client = new MerkleKvClient("localhost", 7379);
+await client.ConnectAsync();
+
+await client.SetAsync("user:123", "john_doe"); // Store key-value
+var value = await client.GetAsync("user:123");  // Returns "john_doe"
+await client.DeleteAsync("user:123");           // Remove key
+```
+
+**Documentation:** [`clients/dotnet/README.md`](clients/dotnet/README.md)
+
+### C++
+
+**Installation:**
+```bash
+# CMake
+find_package(MerkleKV REQUIRED)
+target_link_libraries(your_target MerkleKV::Client)
+```
+
+**Quick Start:**
+```cpp
+#include <merklekv/client.hpp>
+
+MerkleKvClient client("localhost", 7379);
+client.connect();
+
+client.set("user:123", "john_doe");      // Store key-value
+auto value = client.get("user:123");     // Returns optional<string>
+client.del("user:123");                  // Remove key
+```
+
+**Documentation:** [`clients/cpp/README.md`](clients/cpp/README.md)
+
+### Ruby
+
+**Installation:**
+```bash
+gem install merklekv
+```
+
+**Quick Start:**
+```ruby
+require 'merklekv'
+
+client = MerkleKV::Client.new(host: "localhost", port: 7379)
+client.set("user:123", "john_doe")       # Store key-value
+value = client.get("user:123")           # Returns "john_doe"
+client.delete("user:123")                # Remove key
+client.close
+```
+
+**Documentation:** [`clients/ruby/README.md`](clients/ruby/README.md)
+
+### PHP
+
+**Installation:**
+```bash
+composer require merklekv/client
+```
+
+**Quick Start:**
+```php
+<?php
+use MerkleKV\Client;
+
+$client = new Client("localhost", 7379);
+$client->set("user:123", "john_doe");    // Store key-value
+$value = $client->get("user:123");       // Returns "john_doe"
+$client->delete("user:123");             // Remove key
+$client->close();
+```
+
+**Documentation:** [`clients/php/README.md`](clients/php/README.md)
+
+### Protocol Notes
+
+All clients implement consistent protocol behavior with observed server responses:
+
+- **CRLF Termination**: Commands are terminated with `\r\n`
+- **Unicode Support**: Full UTF-8 encoding for keys and values
+- **GET Responses**: Returns `VALUE <data>` for existing keys, `(null)` for missing keys
+- **DELETE Responses**: Returns `OK` for both existing and non-existing keys
+- **Empty Values**: Empty strings are represented as `""`
+- **Control Characters**: Tab (`\t`) and newline (`\n`) characters are rejected by the server
+- **Error Handling**: Consistent error types across all languages
+- **Timeouts**: Configurable operation timeouts (default 5 seconds)
+
+### Known Issues
+
+**Note**: The major server-side issues (large value parser corruption, DELETE response semantics, control character handling) have been resolved as of the latest version.
+
+For complete API documentation and advanced usage examples, see the individual client library documentation in the [`clients/`](clients/) directory.
+
+---
+
+## 📡 Usage (Raw TCP Protocol)
 
 MerkleKV uses a simple, text-based protocol similar to Memcached. You can interact with any `MerkleKV` node using standard TCP clients like `netcat` (nc) or custom applications.
 
@@ -992,13 +1221,13 @@ MerkleKV uses a simple, text-based protocol similar to Memcached. You can intera
 
 ```bash
 # Basic connection
-nc localhost 7878
+nc localhost 7379
 
 # Using netcat with timeout
-nc -w 5 localhost 7878
+nc -w 5 localhost 7379
 
 # Using netcat with verbose output
-nc -v localhost 7878
+nc -v localhost 7379
 ```
 
 ### Available Commands
@@ -1202,8 +1431,8 @@ OK
 ### Interactive Session Example
 
 ```bash
-$ nc -v localhost 7878
-Connection to localhost 7878 port [tcp/*] succeeded!
+$ nc -v localhost 7379
+Connection to localhost 7379 port [tcp/*] succeeded!
 
 # Store some data
 SET user:alice Alice Smith
@@ -1287,7 +1516,7 @@ def merkle_kv_client(host, port):
     return sock
 
 # Usage
-client = merkle_kv_client('localhost', 7878)
+client = merkle_kv_client('localhost', 7379)
 client.send(b'SET user:123 john_doe\r\n')
 response = client.recv(1024).decode().strip()
 print(f"Response: {response}")  # Output: Response: OK
@@ -1296,7 +1525,7 @@ print(f"Response: {response}")  # Output: Response: OK
 #### Bash Script Example
 ```bash
 #!/bin/bash
-exec 3<>/dev/tcp/localhost/7878
+exec 3<>/dev/tcp/localhost/7379
 echo "SET script:status running" >&3
 read response <&3
 echo "Response: $response"
@@ -1379,7 +1608,7 @@ description = "Primary MerkleKV node in us-east datacenter"
 # Network Configuration
 [network]
 bind_address = "127.0.0.1"
-bind_port = 7878
+bind_port = 7379
 max_connections = 1000
 
 # MQTT Broker Settings
@@ -1418,7 +1647,7 @@ node_id = "node-primary"
 
 [network]
 bind_address = "192.168.1.10"
-bind_port = 7878
+bind_port = 7379
 
 [mqtt]
 broker_address = "tcp://192.168.1.100:1883"
@@ -1428,7 +1657,7 @@ client_id = "primary-node"
 [anti_entropy]
 enabled = true
 interval_seconds = 180
-peer_list = ["192.168.1.11:7878", "192.168.1.12:7878"]
+peer_list = ["192.168.1.11:7379", "192.168.1.12:7379"]
 ```
 
 **Node 2 Configuration (`node2.toml`)**
@@ -1437,7 +1666,7 @@ node_id = "node-secondary"
 
 [network]
 bind_address = "192.168.1.11" 
-bind_port = 7878
+bind_port = 7379
 
 [mqtt]
 broker_address = "tcp://192.168.1.100:1883"
@@ -1447,7 +1676,7 @@ client_id = "secondary-node"
 [anti_entropy]
 enabled = true
 interval_seconds = 180
-peer_list = ["192.168.1.10:7878", "192.168.1.12:7878"]
+peer_list = ["192.168.1.10:7379", "192.168.1.12:7379"]
 ```
 
 **Node 3 Configuration (`node3.toml`)**
@@ -1456,7 +1685,7 @@ node_id = "node-tertiary"
 
 [network]
 bind_address = "192.168.1.12"
-bind_port = 7878
+bind_port = 7379
 
 [mqtt]
 broker_address = "tcp://192.168.1.100:1883" 
@@ -1466,7 +1695,7 @@ client_id = "tertiary-node"
 [anti_entropy]
 enabled = true
 interval_seconds = 180
-peer_list = ["192.168.1.10:7878", "192.168.1.11:7878"]
+peer_list = ["192.168.1.10:7379", "192.168.1.11:7379"]
 ```
 
 ### Configuration Options Reference
@@ -1481,7 +1710,7 @@ peer_list = ["192.168.1.10:7878", "192.168.1.11:7878"]
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `bind_address` | String | "127.0.0.1" | IP address to bind the TCP listener |
-| `bind_port` | Integer | 7878 | Port number for client connections |
+| `bind_port` | Integer | 7379 | Port number for client connections |
 | `max_connections` | Integer | 1000 | Maximum concurrent client connections |
 | `connection_timeout` | Integer | 30 | Connection timeout in seconds |
 
@@ -1712,6 +1941,28 @@ We have an exciting future planned for MerkleKV! Below is a comprehensive status
   - ✅ Integration with pytest framework
   - ✅ Continuous integration support
   - ✅ Performance regression detection
+
+---
+
+## Known Issues
+
+### Recently Fixed Issues ✅
+
+The following server-side issues have been resolved:
+
+- **Large Value Parser Corruption**: ✅ **Fixed** - Server now handles values of arbitrary size using streaming line-based reading instead of fixed 1KB chunks.
+
+- **DELETE Response Semantics**: ✅ **Fixed** - Server now returns `DELETED` for existing keys and `NOT_FOUND` for non-existing keys instead of always returning `OK`.
+
+- **Control Character Handling**: ✅ **Fixed** - Server now allows tab (`\t`) characters in values while properly rejecting them in keys and commands. Note: Newline characters (`\n`) cannot be used in values due to the text protocol design (commands are terminated by CRLF).
+
+### Protocol Behavior Notes
+
+- **GET Response Format**: The server returns `VALUE <data>` instead of just `<data>`. Client libraries automatically strip the `VALUE ` prefix.
+
+For a complete list of implementation details across all client libraries, see the [client implementation summary](clients/IMPLEMENTATION_SUMMARY.md).
+
+---
 
 ## 🙌 Contributing
 
