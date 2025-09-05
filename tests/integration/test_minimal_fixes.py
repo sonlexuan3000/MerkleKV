@@ -5,6 +5,10 @@ Minimal focused tests for the three server fixes
 
 import socket
 import time
+import pytest
+
+# Mark all tests in this file as slow (optional)
+pytestmark = pytest.mark.slow
 
 def test_large_values():
     """Test large value handling with line-based parsing"""

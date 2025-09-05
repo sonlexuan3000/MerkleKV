@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [main, develop]
   workflow_dispatch: # Allow manual trigger
+  schedule:
+    - cron: "17 2 * * *"  # 02:17 UTC daily for nightly re-verification
 
 jobs:
   # Job 1: Core Operations Tests
@@ -167,20 +169,6 @@ jobs:
         env:
           RUST_LOG: info
 
-      - name: Run Minimal Fixes Tests
-        run: |
-          cd tests/integration
-          python -m pytest test_minimal_fixes.py -v --tb=short --junitxml=minimal_fixes_results.xml
-        env:
-          RUST_LOG: info
-
-      - name: Run Server Fixes Tests
-        run: |
-          cd tests/integration
-          python -m pytest test_server_fixes.py -v --tb=short --junitxml=server_fixes_results.xml
-        env:
-          RUST_LOG: info
-
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -319,7 +307,59 @@ jobs:
             tests/integration/.benchmarks/
           retention-days: 30
 
-  # Job 5: Test Summary
+  # Job 5: Slow/Optional Tests (run on schedule or manual dispatch)
+  tests-slow:
+    name: Slow/Optional Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build MerkleKV server
+        run: cargo build --release
+
+      - name: Install Python dependencies
+        run: |
+          cd tests/integration
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Slow Integration Tests
+        run: |
+          cd tests/integration
+          python -m pytest -m "slow" -v --tb=short --junitxml=slow_tests_results.xml
+        env:
+          RUST_LOG: info
+
+      - name: Upload slow test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slow-tests-results
+          path: |
+            tests/integration/slow_tests_results.xml
+          retention-days: 7
+
+  # Job 6: Test Summary
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest

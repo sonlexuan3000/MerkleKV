@@ -8,6 +8,10 @@ Test server-side fixes for:
 
 import socket
 import sys
+import pytest
+
+# Mark all tests in this file as slow (optional)
+pytestmark = pytest.mark.slow
 import time
 import threading
 import subprocess
