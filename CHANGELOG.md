@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] — 2025-09-05
+### CI & Build
+- Remove accidental C++ submodule in `clients/cpp/build/_deps/catch2-src`; preserve CMake FetchContent for Catch2.
+- Add `.gitignore` rules to prevent build artifacts from being tracked.
+- Align test discovery to include all 16/16 integration test files.
+- Add nightly CI schedule to re-verify the matrix on `main` (02:17 UTC daily).
+- Isolate optional integration tests with `@pytest.mark.slow` marker; run in dedicated job on schedule/manual dispatch.
+
+### Code Hygiene
+- Remove unused `info` import from `src/replication.rs`.
+
+### Notes
+- No protocol or public API changes. Minimal, surgical edits only.
+
 ### Added
 - **Phase 1 Client Libraries**: Python (`merklekv`), Node.js (`@merklekv/client`), Go client libraries with full TCP protocol support
 - **Phase 2 Client Libraries**: Java (`io.merklekv:client`), Rust (`merklekv-client`) with sync/async APIs
