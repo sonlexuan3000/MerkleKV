@@ -51,7 +51,7 @@ public:
      * @param timeout Operation timeout in milliseconds (default: 5000ms)
      */
     explicit MerkleKvClient(const std::string& host = "127.0.0.1",
-                           uint16_t port = 7878,
+                           uint16_t port = 7379,
                            std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
     /**
