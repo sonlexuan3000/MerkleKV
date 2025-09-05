@@ -39,13 +39,13 @@ test-unit:
 # Run integration tests (requires server)
 test-integration:
 	@echo "Running integration tests..."
-	@echo "Note: Requires MerkleKV server on 127.0.0.1:7878"
+	@echo "Note: Requires MerkleKV server on 127.0.0.1:7379"
 	vendor/bin/phpunit --testsuite="Integration Tests" --group=integration
 
 # Run performance tests
 test-performance:
 	@echo "Running performance tests..."
-	@echo "Note: Requires MerkleKV server on 127.0.0.1:7878"
+	@echo "Note: Requires MerkleKV server on 127.0.0.1:7379"
 	vendor/bin/phpunit --group=performance
 
 # Run tests with coverage
@@ -100,8 +100,8 @@ clean:
 server:
 	@echo "Starting MerkleKV server for testing..."
 	@echo "Note: This assumes MerkleKV binary is in PATH"
-	@echo "Starting server on 127.0.0.1:7878..."
-	merkle_kv --host 127.0.0.1 --port 7878
+	@echo "Starting server on 127.0.0.1:7379..."
+	merkle_kv --host 127.0.0.1 --port 7379
 
 # Quick validation
 validate: install test-unit

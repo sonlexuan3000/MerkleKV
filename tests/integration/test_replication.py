@@ -113,6 +113,37 @@ async def execute_simple_command(host: str, port: int, command: str) -> str:
         writer.close()
         await writer.wait_closed()
 
+async def _eventually_get_async(port: int, key: str, timeout_s: float = 5.0, interval_s: float = 0.1):
+    """Wait for eventual consistency in replication tests (async version)."""
+    deadline = time.time() + timeout_s
+    last = None
+    while time.time() < deadline:
+        try:
+            last = await execute_simple_command("127.0.0.1", port, f"GET {key}")
+            if last != "NOT_FOUND" and not last.startswith("ERROR"):
+                return last
+        except Exception:
+            pass
+        await asyncio.sleep(interval_s)
+    return last
+
+def _eventually_get(port: int, key: str, timeout_s: float = 1.5, interval_s: float = 0.05):
+    """Wait for eventual consistency in replication tests."""
+    deadline = time.time() + timeout_s
+    last = None
+    while time.time() < deadline:
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            last = loop.run_until_complete(execute_simple_command("127.0.0.1", port, f"GET {key}"))
+            loop.close()
+            if last != "NOT_FOUND" and not last.startswith("ERROR"):
+                return last
+        except Exception:
+            pass
+        time.sleep(interval_s)
+    return last
+
 def cleanup_servers(*servers):
     """Clean up server processes."""
     for server in servers:
@@ -135,7 +166,7 @@ class MQTTTestClient:
         self.received_messages = []
         self.connected = threading.Event()
         
-    def on_connect(self, client, userdata, flags, rc):
+    def on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             self.connected.set()
             topic = f"{self.topic_prefix}/events/#"
@@ -144,25 +175,21 @@ class MQTTTestClient:
     def on_message(self, client, userdata, msg):
         try:
             # Try to decode as JSON first (legacy format)
-            payload = json.loads(msg.payload.decode())
+            payload = msg.payload.decode("utf-8")
+            data = json.loads(payload)
             self.received_messages.append({
                 'topic': msg.topic,
-                'payload': payload,
+                'payload': data,
                 'timestamp': time.time()
             })
-        except json.JSONDecodeError:
-            # Handle binary format (CBOR)
-            self.received_messages.append({
-                'topic': msg.topic,
-                'payload': msg.payload,
-                'timestamp': time.time(),
-                'format': 'binary'
-            })
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            # Handle binary format (CBOR) or malformed data gracefully
+            pass
         
     async def monitor_replication_messages(self, duration: float = 5.0):
         """Monitor MQTT messages for a specified duration."""
         try:
-            client = mqtt.Client()
+            client = mqtt.Client(protocol=mqtt.MQTTv5)
             client.on_connect = self.on_connect
             client.on_message = self.on_message
             
@@ -241,11 +268,8 @@ async def test_set_operation_replication(unique_topic_prefix):
         result = await execute_simple_command("127.0.0.1", 7382, f"SET {test_key} {test_value}")
         assert result == "OK"
         
-        # Wait for replication to occur
-        await asyncio.sleep(5)
-        
-        # Verify the value exists on node2
-        result = await execute_simple_command("127.0.0.1", 7383, f"GET {test_key}")
+        # Wait for replication to occur with eventual consistency
+        result = await _eventually_get_async(7383, test_key)
         assert result == f"VALUE {test_value}", f"Expected VALUE {test_value}, got {result}"
         
         print(f"✅ SET replication test passed: {test_key} = {test_value}")
@@ -281,24 +305,20 @@ async def test_delete_operation_replication(unique_topic_prefix):
         result = await execute_simple_command("127.0.0.1", 7384, f"SET {test_key} initial_value")
         assert result == "OK"
         
-        # Wait for replication
-        await asyncio.sleep(5)
+        # Wait for replication with eventual consistency
+        result2 = await _eventually_get_async(7385, test_key)
+        assert result2 == "VALUE initial_value"
         
         # Verify both nodes have the value
         result1 = await execute_simple_command("127.0.0.1", 7384, f"GET {test_key}")
-        result2 = await execute_simple_command("127.0.0.1", 7385, f"GET {test_key}")
         assert result1 == "VALUE initial_value"
-        assert result2 == "VALUE initial_value"
         
         # Delete from node1
         result = await execute_simple_command("127.0.0.1", 7384, f"DEL {test_key}")
         assert result == "DELETED"  # Key exists, so expect DELETED
         
-        # Wait for replication
-        await asyncio.sleep(5)
-        
-        # Verify deletion on node2
-        result2 = await execute_simple_command("127.0.0.1", 7385, f"GET {test_key}")
+        # Wait for deletion replication with eventual consistency
+        result2 = await _eventually_get_async(7385, test_key)
         assert result2 == "NOT_FOUND", f"Expected NOT_FOUND, got {result2}"
         
         print(f"✅ DELETE replication test passed: {test_key}")
@@ -336,24 +356,20 @@ async def test_numeric_operations_replication():
         result = await execute_simple_command("127.0.0.1", 7386, f"SET {test_key} 10")
         assert result == "OK"
         
-        # Wait for replication
-        await asyncio.sleep(5)
+        # Wait for replication with eventual consistency
+        result2 = await _eventually_get_async(7387, test_key)
+        assert result2 == "VALUE 10"
         
         # Verify initial value on both nodes
         result1 = await execute_simple_command("127.0.0.1", 7386, f"GET {test_key}")
-        result2 = await execute_simple_command("127.0.0.1", 7387, f"GET {test_key}")
         assert result1 == "VALUE 10"
-        assert result2 == "VALUE 10"
         
         # Increment on node1
         result = await execute_simple_command("127.0.0.1", 7386, f"INC {test_key}")
         assert result == "VALUE 11"
         
-        # Wait for replication
-        await asyncio.sleep(5)
-        
-        # Verify increment replicated to node2
-        result2 = await execute_simple_command("127.0.0.1", 7387, f"GET {test_key}")
+        # Verify increment replicated to node2 with eventual consistency
+        result2 = await _eventually_get_async(7387, test_key)
         assert result2 == "VALUE 11", f"Expected VALUE 11, got {result2}"
         
         print(f"✅ INC replication test passed: {test_key}")
@@ -391,24 +407,20 @@ async def test_string_operations_replication():
         result = await execute_simple_command("127.0.0.1", 7388, f"SET {test_key} hello")
         assert result == "OK"
         
-        # Wait for replication
-        await asyncio.sleep(5)
+        # Wait for replication with eventual consistency
+        result2 = await _eventually_get_async(7389, test_key)
+        assert result2 == "VALUE hello"
         
         # Verify initial value on both nodes
         result1 = await execute_simple_command("127.0.0.1", 7388, f"GET {test_key}")
-        result2 = await execute_simple_command("127.0.0.1", 7389, f"GET {test_key}")
         assert result1 == "VALUE hello"
-        assert result2 == "VALUE hello"
         
         # Append on node1
         result = await execute_simple_command("127.0.0.1", 7388, f"APPEND {test_key} _world")
         assert "hello_world" in result
         
-        # Wait for replication
-        await asyncio.sleep(5)
-        
-        # Verify append replicated to node2
-        result2 = await execute_simple_command("127.0.0.1", 7389, f"GET {test_key}")
+        # Verify append replicated to node2 with eventual consistency
+        result2 = await _eventually_get_async(7389, test_key)
         assert result2 == "VALUE hello_world", f"Expected VALUE hello_world, got {result2}"
         
         print(f"✅ APPEND replication test passed: {test_key}")
@@ -450,15 +462,12 @@ async def test_concurrent_operations_replication():
             execute_simple_command("127.0.0.1", 7392, "SET concurrent_test3 value3"),
         )
         
-        # Wait for replication to settle
-        await asyncio.sleep(15)
-        
-        # Verify all values are present on all nodes
+        # Verify all values are present on all nodes with eventual consistency
         nodes_ports = [7390, 7391, 7392]
         for port in nodes_ports:
-            result1 = await execute_simple_command("127.0.0.1", port, "GET concurrent_test1")
-            result2 = await execute_simple_command("127.0.0.1", port, "GET concurrent_test2")
-            result3 = await execute_simple_command("127.0.0.1", port, "GET concurrent_test3")
+            result1 = await _eventually_get_async(port, "concurrent_test1")
+            result2 = await _eventually_get_async(port, "concurrent_test2")
+            result3 = await _eventually_get_async(port, "concurrent_test3")
             
             assert result1 == "VALUE value1", f"Node {port} missing concurrent_test1: {result1}"
             assert result2 == "VALUE value2", f"Node {port} missing concurrent_test2: {result2}"
@@ -498,11 +507,8 @@ async def test_replication_with_node_restart():
         result = await execute_simple_command("127.0.0.1", 7393, "SET restart_test1 before_restart")
         assert result == "OK"
         
-        # Wait for replication
-        await asyncio.sleep(8)
-        
-        # Verify replication
-        result = await execute_simple_command("127.0.0.1", 7394, "GET restart_test1")
+        # Wait for replication with eventual consistency
+        result = await _eventually_get_async(7394, "restart_test1")
         assert result == "VALUE before_restart"
         
         # Stop node2
@@ -525,11 +531,8 @@ async def test_replication_with_node_restart():
         result = await execute_simple_command("127.0.0.1", 7393, "SET restart_test3 after_restart")
         assert result == "OK"
         
-        # Wait for replication
-        await asyncio.sleep(5)
-        
-        # Verify new data is replicated to restarted node
-        result = await execute_simple_command("127.0.0.1", 7395, "GET restart_test3")
+        # Verify new data is replicated to restarted node with eventual consistency
+        result = await _eventually_get_async(7395, "restart_test3")
         assert result == "VALUE after_restart"
         
         print("✅ Node restart replication test passed")
@@ -611,7 +614,7 @@ async def test_malformed_mqtt_message_handling(unique_topic_prefix):
         
         # Send a malformed message via MQTT
         try:
-            def on_connect(client, userdata, flags, rc):
+            def on_connect(client, userdata, flags, rc, properties=None):
                 if rc == 0:
                     topic = f"{unique_topic_prefix}/events"
                     
@@ -621,7 +624,7 @@ async def test_malformed_mqtt_message_handling(unique_topic_prefix):
                     # Send valid JSON but wrong format
                     client.publish(topic, json.dumps({"invalid": "format"}))
                     
-            client = mqtt.Client()
+            client = mqtt.Client(protocol=mqtt.MQTTv5)
             client.on_connect = on_connect
             client.connect("test.mosquitto.org", 1883, 60)
             client.loop_start()

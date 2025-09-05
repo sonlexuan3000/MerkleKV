@@ -47,7 +47,7 @@ public:
      * Constructs a MerkleKV client.
      * 
      * @param host Server hostname or IP address (default: "127.0.0.1")
-     * @param port Server port (default: 7878)
+     * @param port Server port (default: 7379)
      * @param timeout Operation timeout in milliseconds (default: 5000ms)
      */
     explicit MerkleKvClient(const std::string& host = "127.0.0.1",
