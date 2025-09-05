@@ -117,7 +117,7 @@ async def test_simple_server_without_replication():
         
         result = await execute_simple_command("127.0.0.1", 7450, "DEL test_key")
         print(f"DELETE result: {result}")
-        assert result == "OK"
+        assert result == "DELETED"  # Key exists, so expect DELETED
         
         result = await execute_simple_command("127.0.0.1", 7450, "GET test_key")
         print(f"GET after DELETE result: {result}")

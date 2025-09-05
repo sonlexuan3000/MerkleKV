@@ -233,7 +233,8 @@ class TestBenchmarks:
                 # Might be NOT_FOUND if DELETE happened first
             elif operation == 2:  # DELETE
                 response = client.delete(key)
-                assert response == "OK"
+                # Accept both DELETED (key exists) and NOT_FOUND (key doesn't exist)
+                assert response in ["DELETED", "NOT_FOUND"]
         
         monitor = PerformanceMonitor()
         monitor.start_monitoring()

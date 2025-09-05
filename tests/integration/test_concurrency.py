@@ -189,7 +189,8 @@ class TestConcurrency:
                     
                     elif operation == 2:  # DELETE
                         response = client.delete(key)
-                        assert response == "OK"
+                        # Accept both DELETED (key exists) and NOT_FOUND (key doesn't exist)
+                        assert response in ["DELETED", "NOT_FOUND"]
                         results.append((f"DELETE_{key}", response))
                     
                     elif operation == 3:  # Another SET
@@ -288,7 +289,7 @@ class TestConcurrency:
             
             # Delete
             response = connected_client.delete(key)
-            assert response == "OK"
+            assert response == "DELETED"  # Key exists, so expect DELETED
             
             # Verify deleted
             response = connected_client.get(key)

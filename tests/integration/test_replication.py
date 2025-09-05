@@ -292,7 +292,7 @@ async def test_delete_operation_replication(unique_topic_prefix):
         
         # Delete from node1
         result = await execute_simple_command("127.0.0.1", 7384, f"DEL {test_key}")
-        assert result == "OK"
+        assert result == "DELETED"  # Key exists, so expect DELETED
         
         # Wait for replication
         await asyncio.sleep(5)

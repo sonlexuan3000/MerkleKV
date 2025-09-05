@@ -7,7 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.4.0] — 2025-09-05
 ### CI & Build
 - Remove accidental C++ submodule in `clients/cpp/build/_deps/catch2-src`; preserve CMake FetchContent for Catch2.
 - Add `.gitignore` rules to prevent build artifacts from being tracked.
