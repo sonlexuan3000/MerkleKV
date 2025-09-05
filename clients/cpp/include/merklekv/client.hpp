@@ -35,7 +35,7 @@ namespace merklekv {
  * 
  * Example usage:
  * @code
- * MerkleKvClient client{"127.0.0.1", 7878};
+ * MerkleKvClient client{"127.0.0.1", 7379};
  * client.set("user:1", "alice");
  * auto value = client.get("user:1");     // std::optional<std::string>
  * bool deleted = client.del("user:1");
