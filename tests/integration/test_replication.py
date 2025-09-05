@@ -43,7 +43,7 @@ def create_simple_replication_config(port: int, node_id: str, topic_prefix: str)
         "sync_interval_seconds": 60,
         "replication": {
             "enabled": True,
-            "mqtt_broker": "test.mosquitto.org",
+            "mqtt_broker": "127.0.0.1",
             "mqtt_port": 1883,
             "topic_prefix": topic_prefix,
             "client_id": node_id
@@ -59,7 +59,7 @@ def create_simple_replication_config(port: int, node_id: str, topic_prefix: str)
 
 async def start_simple_server(config_path: Path, timeout: int = 30) -> subprocess.Popen:
     """Start a MerkleKV server with the given config."""
-    cmd = ["cargo", "run", "--", "--config", str(config_path)]
+    cmd = ["cargo", "run", "--release", "--", "--config", str(config_path)]
     print(f"Starting server: {' '.join(cmd)}")
     
     # Get project root
