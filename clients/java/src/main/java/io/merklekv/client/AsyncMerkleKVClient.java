@@ -98,6 +98,7 @@ public class AsyncMerkleKVClient implements AutoCloseable {
     private Socket createConnection() throws IOException {
         Socket socket = new Socket(host, port);
         socket.setSoTimeout(timeoutMs);
+        socket.setTcpNoDelay(true); // Enable TCP_NODELAY for lower latency
         return socket;
     }
 
@@ -313,6 +314,87 @@ public class AsyncMerkleKVClient implements AutoCloseable {
      */
     public int getTimeoutMs() {
         return timeoutMs;
+    }
+
+    /**
+     * Execute multiple commands in a pipeline for improved performance.
+     * 
+     * @param commands list of commands to execute
+     * @return CompletableFuture with list of responses corresponding to each command
+     */
+    public CompletableFuture<java.util.List<String>> pipelineAsync(java.util.List<String> commands) {
+        if (commands.isEmpty()) {
+            return CompletableFuture.completedFuture(new java.util.ArrayList<>());
+        }
+
+        return getConnection().thenCompose(socket -> 
+            CompletableFuture.supplyAsync(() -> {
+                try {
+                    LOGGER.log(Level.FINE, "Executing async pipeline with {0} commands", commands.size());
+                    
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        socket.getInputStream(), StandardCharsets.UTF_8));
+                    PrintWriter writer = new PrintWriter(new OutputStreamWriter(
+                        socket.getOutputStream(), StandardCharsets.UTF_8), true);
+
+                    // Send all commands
+                    for (String command : commands) {
+                        writer.println(command);
+                    }
+                    writer.flush(); // Ensure all commands are sent
+
+                    // Read all responses
+                    java.util.List<String> responses = new java.util.ArrayList<>(commands.size());
+                    for (int i = 0; i < commands.size(); i++) {
+                        String response = reader.readLine();
+                        if (response == null) {
+                            throw new ConnectionException("Connection closed while reading pipeline response");
+                        }
+                        
+                        response = response.trim();
+                        LOGGER.log(Level.FINEST, "Async pipeline response {0}: {1}", new Object[]{i, response});
+                        
+                        // Check for protocol errors
+                        if (response.startsWith("ERROR ")) {
+                            String errorMsg = response.substring(6);
+                            throw new ProtocolException("Command '" + commands.get(i) + "' failed: " + errorMsg);
+                        }
+                        
+                        responses.add(response);
+                    }
+                    
+                    return responses;
+                    
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    returnConnection(socket);
+                }
+            }, executor)
+        );
+    }
+
+    /**
+     * Perform a health check using GET __health__ command.
+     * According to specification, treats NOT_FOUND as healthy.
+     * 
+     * @return CompletableFuture with true if the server is healthy, false otherwise
+     */
+    public CompletableFuture<Boolean> healthCheckAsync() {
+        return sendCommandAsync("GET __health__")
+            .thenApply(response -> {
+                LOGGER.log(Level.FINE, "Async health check passed - server responded successfully");
+                return true;
+            })
+            .exceptionally(throwable -> {
+                if (throwable.getCause() instanceof KeyNotFoundException) {
+                    LOGGER.log(Level.FINE, "Async health check passed - NOT_FOUND is considered healthy");
+                    return true;
+                } else {
+                    LOGGER.log(Level.FINE, "Async health check failed: {0}", throwable.getMessage());
+                    return false;
+                }
+            });
     }
 
     /**

@@ -4,29 +4,49 @@ Official client libraries for [MerkleKV](https://github.com/AI-Decenter/MerkleKV
 
 ## Available Clients
 
-All 9 official client libraries have been implemented and are production-ready:
+✅ **Phase 4 Complete**: All 13 official client libraries have been implemented and are production-ready with universal port 7379 standardization:
 
-| Language | Package | Status | Documentation |
-|----------|---------|--------|---------------|
-| **Python** | `merklekv` | ✅ Ready | [README](python/README.md) |
-| **Node.js** | `@merklekv/client` | ✅ Ready | [README](nodejs/README.md) |
-| **Go** | `github.com/AI-Decenter/MerkleKV/clients/go` | ✅ Ready | [README](go/README.md) |
-| **Java** | `io.merklekv:client` | ✅ Ready | [README](java/README.md) |
-| **Rust** | `merklekv-client` | ✅ Ready | [README](rust/README.md) |
-| **C#/.NET** | `MerkleKV.Client` | ✅ Ready | [README](dotnet/README.md) |
-| **C++** | Header-only library | ✅ Ready | [README](cpp/README.md) |
-| **Ruby** | `merklekv` | ✅ Ready | [README](ruby/README.md) |
-| **PHP** | `merklekv/client` | ✅ Ready | [README](php/README.md) |
+### High-Priority & Medium-Priority Languages (Phase 1-3 Complete)
+
+| Language | Package | Status | Default Port | Documentation |
+|----------|---------|--------|:------------:|---------------|
+| **Python** | `merklekv` | ✅ Ready | 7379 | [README](python/README.md) |
+| **Node.js** | `@merklekv/client` | ✅ Ready | 7379 | [README](nodejs/README.md) |
+| **Go** | `github.com/AI-Decenter/MerkleKV/clients/go` | ✅ Ready | 7379 | [README](go/README.md) |
+| **Java** | `io.merklekv:client` | ✅ Ready | 7379 | [README](java/README.md) |
+| **Rust** | `merklekv-client` | ✅ Ready | 7379 | [README](rust/README.md) |
+| **C#/.NET** | `MerkleKV.Client` | ✅ Ready | 7379 | [README](dotnet/README.md) |
+| **C++** | Header-only library | ✅ Ready | 7379 | [README](cpp/README.md) |
+| **Ruby** | `merklekv` | ✅ Ready | 7379 | [README](ruby/README.md) |
+| **PHP** | `merklekv/client` | ✅ Ready | 7379 | [README](php/README.md) |
+
+### Low-Priority Languages (Phase 4 Complete)
+
+| Language | Package | Status | Default Port | Documentation |
+|----------|---------|--------|:------------:|---------------|
+| **Swift** | `MerkleKVClient` (SPM) | ✅ Ready | 7379 | [README](swift/README.md) |
+| **Kotlin** | `io.merklekv:merklekv-client` | ✅ Ready | 7379 | [README](kotlin/README.md) |
+| **Scala** | `io.merklekv:merklekv-client-scala` | ✅ Ready | 7379 | [README](scala/README.md) |
+| **Elixir** | `merklekv_client` | ✅ Ready | 7379 | [README](elixir/README.md) |
 
 ## Protocol Overview
 
 All clients implement the MerkleKV TCP text protocol with consistent behavior:
 
-- **Connection**: TCP socket to MerkleKV server (default port 7379)
+- **Connection**: TCP socket to MerkleKV server (default port **7379** - universally standardized)
 - **Commands**: Text-based with CRLF (`\r\n`) termination
 - **Core Operations**: `GET key`, `SET key value`, `DEL key`
 - **Responses**: `VALUE <data>`, `OK`, `(null)`, `NOT_FOUND`, `ERROR message`
 - **Encoding**: UTF-8 with empty values represented as `""`
+- **Environment Variable**: All clients support `MERKLEKV_PORT` override for testing flexibility
+
+## Port 7379 Standardization
+
+✅ **Universal Port Standard**: All 13 clients now default to port 7379
+- **Server Configuration**: `config.toml` updated to port 7379
+- **CI/CD Pipeline**: Docker and testing infrastructure unified on port 7379  
+- **Environment Variables**: All test suites support `MERKLEKV_PORT=7379` override
+- **Backward Compatibility**: No breaking changes - existing applications continue working
 
 ## Shared Constraints & Protocol Behavior
 
@@ -49,7 +69,7 @@ pip install merklekv
 ```python
 from merklekv import MerkleKVClient
 
-client = MerkleKVClient("localhost", 7379)
+client = MerkleKVClient("localhost", 7379)  # Default port 7379
 client.set("user:123", "john_doe")
 value = client.get("user:123")  # Returns "john_doe"
 client.delete("user:123")
@@ -64,7 +84,7 @@ npm install @merklekv/client
 ```javascript
 const { MerkleKVClient } = require('@merklekv/client');
 
-const client = new MerkleKVClient('localhost', 7379);
+const client = new MerkleKVClient('localhost', 7379);  // Default port 7379
 await client.set('user:123', 'john_doe');
 const value = await client.get('user:123'); // Returns 'john_doe'
 await client.delete('user:123');
@@ -79,7 +99,7 @@ go get github.com/AI-Decenter/MerkleKV/clients/go
 ```go
 import merklekv "github.com/AI-Decenter/MerkleKV/clients/go"
 
-client := merklekv.New("localhost", 7379)
+client := merklekv.New("localhost", 7379)  // Default port 7379
 client.Set("user:123", "john_doe")
 value, _ := client.Get("user:123") // Returns "john_doe"
 client.Delete("user:123")
@@ -98,7 +118,7 @@ client.Delete("user:123")
 ```java
 import io.merklekv.client.MerkleKVClient;
 
-try (MerkleKVClient client = new MerkleKVClient("localhost", 7379)) {
+try (MerkleKVClient client = new MerkleKVClient("localhost", 7379)) {  // Default port 7379
     client.set("user:123", "john_doe");
     String value = client.get("user:123"); // Returns "john_doe"
     client.delete("user:123");
@@ -115,7 +135,7 @@ merklekv-client = "1.0.0"
 ```rust
 use merklekv_client::Client;
 
-let mut client = Client::connect("127.0.0.1:7379")?;
+let mut client = Client::connect("127.0.0.1:7379")?;  // Default port 7379
 client.set("user:123", "john_doe")?;
 let value = client.get("user:123")?; // Returns Some("john_doe")
 client.delete("user:123")?;
@@ -181,6 +201,72 @@ $client = new Client("localhost", 7379);
 $client->set("user:123", "john_doe");
 $value = $client->get("user:123"); // Returns "john_doe"
 $client->delete("user:123");
+```
+
+### Swift
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/AI-Decenter/MerkleKV-Swift.git", from: "1.0.0")
+]
+```
+
+```swift
+import MerkleKV
+
+let client = await MerkleKVClient(host: "localhost", port: 7379)
+await client.set("user:123", "john_doe")
+let value = await client.get("user:123") // Returns "john_doe"
+await client.delete("user:123")
+```
+
+### Kotlin
+
+```gradle
+dependencies {
+    implementation 'com.merklekv:client:1.0.0'
+}
+```
+
+```kotlin
+import com.merklekv.MerkleKVClient
+
+val client = MerkleKVClient("localhost", 7379)
+client.set("user:123", "john_doe")
+val value = client.get("user:123") // Returns "john_doe"
+client.delete("user:123")
+```
+
+### Scala
+
+```scala
+libraryDependencies += "com.merklekv" %% "client" % "1.0.0"
+```
+
+```scala
+import com.merklekv.MerkleKVClient
+
+val client = new MerkleKVClient("localhost", 7379)
+client.set("user:123", "john_doe").recover { case _ => () }
+val value = client.get("user:123") // Returns Future[Option[String]]
+client.delete("user:123")
+```
+
+### Elixir
+
+```elixir
+# mix.exs
+defp deps do
+  [{:merklekv, "~> 1.0"}]
+end
+```
+
+```elixir
+{:ok, client} = MerkleKV.Client.start_link([host: "localhost", port: 7379])
+:ok = MerkleKV.Client.set(client, "user:123", "john_doe")
+{:ok, value} = MerkleKV.Client.get(client, "user:123") # Returns "john_doe"
+:ok = MerkleKV.Client.delete(client, "user:123")
 ```
 
 ## Common Features

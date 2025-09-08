@@ -10,7 +10,7 @@
     <projectUrl>https://github.com/AI-Decenter/MerkleKV</projectUrl>
     <description>Official .NET client library for MerkleKV distributed key-value store</description>
     <tags>merkle key-value distributed database nosql</tags>
-    <repository type="git" url="https://github.com/AI-Decenter/MerkleKV" commit="573b1573b08c0e97d65b423a1855516d62bbdbe7" />
+    <repository type="git" url="https://github.com/AI-Decenter/MerkleKV" commit="c9d6b9da5442055e0e87f890ca0e36484fef1ca2" />
     <dependencies>
       <group targetFramework="net8.0" />
     </dependencies>

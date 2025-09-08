@@ -64,6 +64,10 @@ impl Client {
         let stream = TcpStream::connect(addr)
             .map_err(|e| Error::connection(format!("Failed to connect to {}: {}", addr, e)))?;
         
+        // Enable TCP_NODELAY for performance optimization
+        stream.set_nodelay(true)
+            .map_err(|e| Error::connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
+        
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
         
@@ -217,6 +221,93 @@ impl Client {
         }
         
         Ok(response)
+    }
+
+    /// Execute multiple commands in a pipeline for improved performance
+    /// 
+    /// Sends all commands in a single batch and reads responses in order.
+    /// This reduces network round-trips and improves throughput.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `commands` - Vector of command strings to execute
+    /// 
+    /// # Returns
+    /// 
+    /// Vector of response strings in the same order as input commands
+    /// 
+    /// # Errors
+    /// 
+    /// * `Error::Io` if network communication fails
+    /// * `Error::Protocol` if any command returns an error
+    pub fn pipeline(&mut self, commands: Vec<String>) -> Result<Vec<String>> {
+        if commands.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        debug!("Executing pipeline with {} commands", commands.len());
+
+        // Write all commands with CRLF termination
+        for command in &commands {
+            writeln!(self.writer, "{}", command)
+                .map_err(Error::io)?;
+        }
+
+        // Flush all commands at once
+        self.writer.flush()
+            .map_err(Error::io)?;
+
+        // Read responses in order
+        let mut responses = Vec::with_capacity(commands.len());
+        for (i, command) in commands.iter().enumerate() {
+            let mut response = String::new();
+            self.reader.read_line(&mut response)
+                .map_err(Error::io)?;
+            
+            let response = response.trim().to_string();
+            debug!("Pipeline response {}: {}", i, response);
+
+            // Check for protocol errors
+            if let Some(error) = response.strip_prefix("ERROR ") {
+                return Err(Error::protocol(format!("Command '{}' failed: {}", command, error)));
+            }
+
+            responses.push(response);
+        }
+
+        Ok(responses)
+    }
+
+    /// Perform a health check using GET __health__ command
+    /// 
+    /// According to specification, treats NOT_FOUND as healthy.
+    /// 
+    /// # Returns
+    /// 
+    /// `true` if the server is healthy, `false` otherwise
+    /// 
+    /// # Errors
+    /// 
+    /// * `Error::Io` if network communication fails
+    pub fn health_check(&mut self) -> Result<bool> {
+        debug!("Performing health check");
+
+        let response = self.send_command("GET __health__");
+        
+        match response {
+            Ok(_) => {
+                debug!("Health check passed - server responded successfully");
+                Ok(true)
+            }
+            Err(Error::KeyNotFound { .. }) => {
+                debug!("Health check passed - NOT_FOUND is considered healthy");
+                Ok(true)
+            }
+            Err(e) => {
+                debug!("Health check failed: {}", e);
+                Ok(false)
+            }
+        }
     }
 }
 

@@ -12,7 +12,13 @@ namespace MerkleKV.Tests;
 public class IntegrationTests
 {
     private const string TestHost = "127.0.0.1";
-    private const int TestPort = 7379;
+    private static readonly int TestPort = GetTestPort();
+
+    private static int GetTestPort()
+    {
+        var portEnv = Environment.GetEnvironmentVariable("MERKLEKV_PORT");
+        return string.IsNullOrEmpty(portEnv) ? 7379 : int.Parse(portEnv);
+    }
 
     [Fact]
     public async Task BasicOperations_WorkCorrectly()

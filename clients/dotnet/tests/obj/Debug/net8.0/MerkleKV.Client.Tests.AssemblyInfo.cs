@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MerkleKV.Client.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+573b1573b08c0e97d65b423a1855516d62bbdbe7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c9d6b9da5442055e0e87f890ca0e36484fef1ca2")]
 [assembly: System.Reflection.AssemblyProductAttribute("MerkleKV.Client.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MerkleKV.Client.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

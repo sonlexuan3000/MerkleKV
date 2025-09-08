@@ -86,6 +86,14 @@ func (c *Client) ConnectWithContext(ctx context.Context) error {
 		return &ConnectionError{Op: "connect", Err: err}
 	}
 
+	// Enable TCP_NODELAY for performance optimization
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		if err := tcpConn.SetNoDelay(true); err != nil {
+			conn.Close()
+			return &ConnectionError{Op: "set_nodelay", Err: err}
+		}
+	}
+
 	c.conn = conn
 	c.reader = bufio.NewReader(conn)
 	c.writer = bufio.NewWriter(conn)
@@ -307,4 +315,123 @@ func (c *Client) PingWithContext(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Pipeline executes multiple commands in a single batch for improved performance.
+//
+// Commands are sent together in one write operation and responses are read in order.
+// This reduces network round-trips and improves throughput for multiple operations.
+//
+// Parameters:
+//   - commands: Slice of command strings to execute
+//
+// Returns a slice of response strings in the same order as input commands.
+func (c *Client) Pipeline(commands []string) ([]string, error) {
+	return c.PipelineWithContext(context.Background(), commands)
+}
+
+// PipelineWithContext executes multiple commands in a single batch with context support.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - commands: Slice of command strings to execute
+//
+// Returns a slice of response strings in the same order as input commands.
+func (c *Client) PipelineWithContext(ctx context.Context, commands []string) ([]string, error) {
+	if len(commands) == 0 {
+		return []string{}, nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.connected || c.conn == nil {
+		return nil, ErrNotConnected
+	}
+
+	// Set deadline based on context or timeout
+	deadline, hasDeadline := ctx.Deadline()
+	if !hasDeadline {
+		deadline = time.Now().Add(c.timeout)
+	}
+
+	err := c.conn.SetDeadline(deadline)
+	if err != nil {
+		return nil, &ConnectionError{Op: "set deadline", Err: err}
+	}
+
+	// Write all commands in one batch with CRLF termination
+	for _, command := range commands {
+		_, err = c.writer.WriteString(command + "\r\n")
+		if err != nil {
+			c.connected = false
+			return nil, &ConnectionError{Op: "write batch", Err: err}
+		}
+	}
+
+	// Flush all commands at once
+	err = c.writer.Flush()
+	if err != nil {
+		c.connected = false
+		return nil, &ConnectionError{Op: "flush batch", Err: err}
+	}
+
+	// Read responses in order
+	responses := make([]string, len(commands))
+	for i := 0; i < len(commands); i++ {
+		response, err := c.reader.ReadString('\n')
+		if err != nil {
+			c.connected = false
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return nil, &TimeoutError{Op: "read pipeline response", Timeout: c.timeout.String()}
+			}
+			return nil, &ConnectionError{Op: "read pipeline", Err: err}
+		}
+
+		// Clean up response (remove \r\n)
+		response = strings.TrimSpace(response)
+
+		// Check for protocol errors
+		if strings.HasPrefix(response, "ERROR ") {
+			errorMsg := strings.TrimPrefix(response, "ERROR ")
+			return nil, &ProtocolError{Op: "pipeline command", Message: errorMsg}
+		}
+
+		responses[i] = response
+	}
+
+	return responses, nil
+}
+
+// HealthCheck performs a health check using GET __health__ command.
+//
+// According to the specification, treats NOT_FOUND as healthy.
+// This method is preferred over Ping for standardized health checking.
+//
+// Returns true if the server is healthy, false otherwise.
+func (c *Client) HealthCheck() (bool, error) {
+	return c.HealthCheckWithContext(context.Background())
+}
+
+// HealthCheckWithContext performs a health check with context support.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//
+// Returns true if the server is healthy, false otherwise.
+func (c *Client) HealthCheckWithContext(ctx context.Context) (bool, error) {
+	response, err := c.sendCommand(ctx, "GET __health__")
+	if err != nil {
+		// Check if it's a protocol error indicating NOT_FOUND
+		if protocolErr, ok := err.(*ProtocolError); ok {
+			if strings.Contains(protocolErr.Message, "NOT_FOUND") {
+				return true, nil // NOT_FOUND is considered healthy
+			}
+		}
+		return false, err
+	}
+
+	// Any successful response indicates health
+	_ = response // unused but indicates successful response
+	return true, nil
 }

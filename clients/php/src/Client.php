@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MerkleKV;
 
 use InvalidArgumentException;
+use Exception;
 
 /**
  * Official PHP client for MerkleKV distributed key-value store.
@@ -171,6 +172,65 @@ class Client
     }
 
     /**
+     * Execute multiple operations in a pipeline for better performance.
+     *
+     * @param array $operations Associative array of key => value pairs to set
+     * @throws ConnectionException if connection fails
+     * @throws TimeoutException if operation times out
+     * @throws ProtocolException if server returns an error
+     */
+    public function pipeline(array $operations): void
+    {
+        if (empty($operations)) {
+            return;
+        }
+
+        $this->ensureConnected();
+
+        // Build batch commands
+        $commands = [];
+        foreach ($operations as $key => $value) {
+            $this->validateKey((string)$key);
+            $formattedValue = $this->formatValue((string)$value);
+            $commands[] = "SET {$key} {$formattedValue}";
+        }
+
+        // Send all commands at once
+        $batchCommand = implode("\r\n", $commands) . "\r\n";
+        $this->writeToSocket($batchCommand);
+
+        // Read all responses
+        foreach ($commands as $i => $command) {
+            $response = $this->readLineFromSocket();
+            $response = rtrim($response, "\r\n");
+
+            if ($response !== "OK" && strpos($response, "ERROR ") === 0) {
+                throw new ProtocolException(substr($response, 6));
+            }
+        }
+    }
+
+    /**
+     * Perform a health check on the server connection.
+     *
+     * @return bool true if server is healthy and responsive
+     */
+    public function healthCheck(): bool
+    {
+        try {
+            $this->ensureConnected();
+            
+            // Try a simple GET operation on a non-existent key
+            $response = $this->sendCommand("GET __health_check__");
+            
+            // Expect NOT_FOUND for non-existent key, which indicates server is working
+            return $response === "NOT_FOUND" || strpos($response, "VALUE ") === 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /**
      * Close the connection to the server.
      * This method is idempotent and can be called multiple times safely.
      */
@@ -178,7 +238,13 @@ class Client
     {
         if ($this->socket !== null) {
             if (is_resource($this->socket)) {
-                fclose($this->socket);
+                if (get_resource_type($this->socket) === 'Socket') {
+                    // ext-sockets
+                    socket_close($this->socket);
+                } else {
+                    // stream
+                    fclose($this->socket);
+                }
             }
             $this->socket = null;
         }
@@ -191,7 +257,17 @@ class Client
      */
     public function isConnected(): bool
     {
-        return $this->socket !== null && is_resource($this->socket) && !feof($this->socket);
+        if ($this->socket === null || !is_resource($this->socket)) {
+            return false;
+        }
+        
+        if (get_resource_type($this->socket) === 'Socket') {
+            // ext-sockets - just check if resource is valid
+            return true;
+        } else {
+            // stream - check for EOF
+            return !feof($this->socket);
+        }
     }
 
     /**
@@ -206,6 +282,53 @@ class Client
             return;
         }
 
+        // Try ext-sockets first for better TCP_NODELAY support
+        if (extension_loaded('sockets')) {
+            $this->connectWithSockets();
+        } else {
+            // Fallback to stream with warning
+            error_log("PHP ext-sockets not available, falling back to stream (TCP_NODELAY may not be optimal)");
+            $this->connectWithStream();
+        }
+    }
+
+    /**
+     * Connect using ext-sockets with proper TCP_NODELAY.
+     */
+    private function connectWithSockets(): void
+    {
+        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+        if ($socket === false) {
+            throw new ConnectionException("Failed to create socket: " . socket_strerror(socket_last_error()));
+        }
+
+        // Enable TCP_NODELAY
+        if (!socket_set_option($socket, SOL_TCP, TCP_NODELAY, 1)) {
+            socket_close($socket);
+            throw new ConnectionException("Failed to set TCP_NODELAY: " . socket_strerror(socket_last_error($socket)));
+        }
+
+        // Set timeout
+        $timeout_sec = (int)$this->timeout;
+        $timeout_usec = (int)(($this->timeout - $timeout_sec) * 1000000);
+        socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $timeout_sec, 'usec' => $timeout_usec]);
+        socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $timeout_sec, 'usec' => $timeout_usec]);
+
+        // Connect
+        if (!socket_connect($socket, $this->host, $this->port)) {
+            $error = socket_strerror(socket_last_error($socket));
+            socket_close($socket);
+            throw new ConnectionException("Failed to connect to {$this->host}:{$this->port}: {$error}");
+        }
+
+        $this->socket = $socket;
+    }
+
+    /**
+     * Connect using stream as fallback.
+     */
+    private function connectWithStream(): void
+    {
         $context = stream_context_create([
             'socket' => [
                 'tcp_nodelay' => true,
@@ -249,35 +372,77 @@ class Client
 
         // Send command with CRLF termination
         $fullCommand = $command . "\r\n";
-        $bytesWritten = fwrite($this->socket, $fullCommand);
-        
-        if ($bytesWritten === false || $bytesWritten !== strlen($fullCommand)) {
-            $this->close();
-            throw new ConnectionException("Failed to send command");
-        }
-
-        // Flush output
-        if (!fflush($this->socket)) {
-            $this->close();
-            throw new ConnectionException("Failed to flush command");
-        }
+        $this->writeToSocket($fullCommand);
 
         // Read response until CRLF
-        $response = fgets($this->socket);
+        $response = $this->readLineFromSocket();
         
-        if ($response === false) {
-            $info = stream_get_meta_data($this->socket);
-            $this->close();
-            
-            if ($info['timed_out']) {
-                throw new TimeoutException("Operation timeout");
-            } else {
-                throw new ConnectionException("Failed to read response");
-            }
-        }
-
         // Remove CRLF terminator
         return rtrim($response, "\r\n");
+    }
+
+    /**
+     * Write data to socket (handles both socket types).
+     */
+    private function writeToSocket(string $data): void
+    {
+        if (is_resource($this->socket) && get_resource_type($this->socket) === 'Socket') {
+            // ext-sockets
+            $bytesWritten = socket_write($this->socket, $data, strlen($data));
+            if ($bytesWritten === false || $bytesWritten !== strlen($data)) {
+                $this->close();
+                throw new ConnectionException("Failed to send command: " . socket_strerror(socket_last_error($this->socket)));
+            }
+        } else {
+            // stream
+            $bytesWritten = fwrite($this->socket, $data);
+            if ($bytesWritten === false || $bytesWritten !== strlen($data)) {
+                $this->close();
+                throw new ConnectionException("Failed to send command");
+            }
+            // Flush output for streams
+            if (!fflush($this->socket)) {
+                $this->close();
+                throw new ConnectionException("Failed to flush command");
+            }
+        }
+    }
+
+    /**
+     * Read a line from socket (handles both socket types).
+     */
+    private function readLineFromSocket(): string
+    {
+        if (is_resource($this->socket) && get_resource_type($this->socket) === 'Socket') {
+            // ext-sockets - read until CRLF
+            $response = '';
+            while (true) {
+                $char = socket_read($this->socket, 1);
+                if ($char === false) {
+                    $this->close();
+                    throw new ConnectionException("Failed to read response: " . socket_strerror(socket_last_error($this->socket)));
+                }
+                $response .= $char;
+                if (substr($response, -2) === "\r\n") {
+                    break;
+                }
+            }
+            return $response;
+        } else {
+            // stream
+            $response = fgets($this->socket);
+            if ($response === false) {
+                $info = stream_get_meta_data($this->socket);
+                $this->close();
+                
+                if ($info['timed_out']) {
+                    throw new TimeoutException("Operation timeout");
+                } else {
+                    throw new ConnectionException("Failed to read response");
+                }
+            }
+            return $response;
+        }
     }
 
     /**

@@ -124,6 +124,73 @@ module MerkleKV
       end
     end
 
+    # Execute multiple operations in a pipeline for better performance.
+    #
+    # @param operations [Hash] Hash of key => value pairs to set
+    # @raise [ConnectionError] if connection fails
+    # @raise [TimeoutError] if operation times out
+    # @raise [ProtocolError] if server returns an error
+    # @example
+    #   client.pipeline({"user:1" => "alice", "user:2" => "bob"})
+    def pipeline(operations)
+      return if operations.empty?
+
+      ensure_connected
+      
+      begin
+        Timeout.timeout(@timeout) do
+          # Send all commands at once
+          commands = []
+          operations.each do |key, value|
+            validate_key(key)
+            raise ArgumentError, "Value cannot be nil" if value.nil?
+            formatted_value = format_value(value)
+            commands << "SET #{key} #{formatted_value}"
+          end
+          
+          batch_command = commands.join("\r\n") + "\r\n"
+          @socket.write(batch_command)
+          @socket.flush
+          
+          # Read all responses
+          operations.size.times do
+            response = @socket.gets&.chomp
+            raise ConnectionError, "Failed to read pipeline response" if response.nil?
+            
+            unless response == "OK" || !response.start_with?("ERROR ")
+              raise ProtocolError, response[6..-1] if response.start_with?("ERROR ")
+            end
+          end
+        end
+      rescue Timeout::Error
+        raise TimeoutError, "Pipeline operation timeout"
+      rescue Errno::EPIPE, Errno::ECONNRESET => e
+        @socket = nil
+        raise ConnectionError, "Connection lost during pipeline: #{e.message}"
+      end
+    end
+
+    # Perform a health check on the server connection.
+    #
+    # @return [Boolean] true if server is healthy and responsive
+    # @example
+    #   if client.health_check
+    #     puts "Server is healthy"
+    #   end
+    def health_check
+      begin
+        ensure_connected
+        
+        # Try a simple GET operation on a non-existent key
+        response = send_command("GET __health_check__")
+        
+        # Expect NOT_FOUND for non-existent key, which indicates server is working
+        response == "NOT_FOUND" || response.start_with?("VALUE ")
+      rescue StandardError
+        false
+      end
+    end
+
     # Close the connection to the server.
     # This method is idempotent and can be called multiple times safely.
     #

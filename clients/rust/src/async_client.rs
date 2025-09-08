@@ -32,9 +32,15 @@ impl ConnectionPool {
             Ok(stream)
         } else {
             debug!("Creating new connection to {}", self.addr);
-            TcpStream::connect(&self.addr)
+            let stream = TcpStream::connect(&self.addr)
                 .await
-                .map_err(|e| Error::connection(format!("Failed to connect to {}: {}", self.addr, e)))
+                .map_err(|e| Error::connection(format!("Failed to connect to {}: {}", self.addr, e)))?;
+            
+            // Enable TCP_NODELAY for performance optimization
+            stream.set_nodelay(true)
+                .map_err(|e| Error::connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
+            
+            Ok(stream)
         }
     }
     
@@ -114,9 +120,13 @@ impl AsyncClient {
         info!("Connecting to MerkleKV server at {} with pool size {}", addr, pool_size);
         
         // Test connection to ensure server is reachable
-        let _test_stream = TcpStream::connect(addr)
+        let test_stream = TcpStream::connect(addr)
             .await
             .map_err(|e| Error::connection(format!("Failed to connect to {}: {}", addr, e)))?;
+        
+        // Enable TCP_NODELAY for test connection
+        test_stream.set_nodelay(true)
+            .map_err(|e| Error::connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
         
         let pool = ConnectionPool::new(addr.to_string(), pool_size);
         
@@ -429,6 +439,105 @@ async fn send_command_on_stream(stream: TcpStream, command: &str) -> Result<(Str
     let stream = reader.reunite(writer)?;
     
     Ok((response, stream))
+}
+
+impl AsyncClient {
+    /// Execute multiple commands in a pipeline for improved performance
+    /// 
+    /// Sends all commands in a single batch and reads responses in order.
+    /// This reduces network round-trips and improves throughput.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `commands` - Vector of command strings to execute
+    /// 
+    /// # Returns
+    /// 
+    /// Vector of response strings in the same order as input commands
+    /// 
+    /// # Errors
+    /// 
+    /// * `Error::Io` if network communication fails
+    /// * `Error::Protocol` if any command returns an error
+    pub async fn pipeline(&mut self, commands: Vec<String>) -> Result<Vec<String>> {
+        if commands.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        debug!("Executing async pipeline with {} commands", commands.len());
+
+        let mut pool = self.pool.lock().await;
+        let stream = pool.get_connection().await?;
+        let (reader, writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+        let mut buf_writer = BufWriter::new(writer);
+
+        // Write all commands with CRLF termination
+        for command in &commands {
+            buf_writer.write_all(format!("{}\r\n", command).as_bytes()).await
+                .map_err(Error::io)?;
+        }
+
+        // Flush all commands at once
+        buf_writer.flush().await
+            .map_err(Error::io)?;
+
+        // Read responses in order
+        let mut responses = Vec::with_capacity(commands.len());
+        for (i, command) in commands.iter().enumerate() {
+            let mut response = String::new();
+            buf_reader.read_line(&mut response).await
+                .map_err(Error::io)?;
+            
+            let response = response.trim().to_string();
+            debug!("Async pipeline response {}: {}", i, response);
+
+            // Check for protocol errors
+            if let Some(error) = response.strip_prefix("ERROR ") {
+                return Err(Error::protocol(format!("Command '{}' failed: {}", command, error)));
+            }
+
+            responses.push(response);
+        }
+
+        // Reunite the stream and return it to the pool
+        let stream = buf_reader.into_inner().reunite(buf_writer.into_inner())?;
+        pool.return_connection(stream).await;
+
+        Ok(responses)
+    }
+
+    /// Perform a health check using GET __health__ command
+    /// 
+    /// According to specification, treats NOT_FOUND as healthy.
+    /// 
+    /// # Returns
+    /// 
+    /// `true` if the server is healthy, `false` otherwise
+    /// 
+    /// # Errors
+    /// 
+    /// * `Error::Io` if network communication fails
+    pub async fn health_check(&mut self) -> Result<bool> {
+        debug!("Performing async health check");
+
+        let response = self.send_command("GET __health__").await;
+        
+        match response {
+            Ok(_) => {
+                debug!("Async health check passed - server responded successfully");
+                Ok(true)
+            }
+            Err(Error::KeyNotFound { .. }) => {
+                debug!("Async health check passed - NOT_FOUND is considered healthy");
+                Ok(true)
+            }
+            Err(e) => {
+                debug!("Async health check failed: {}", e);
+                Ok(false)
+            }
+        }
+    }
 }
 
 // Implement Send and Sync for AsyncClient

@@ -89,6 +89,8 @@ export class MerkleKVClient {
             }, this.timeout);
 
             this.socket = new net.Socket();
+            // Enable TCP_NODELAY for optimal latency
+            this.socket.setNoDelay(true);
             this.lineTransform = new LineTransform();
             
             // Set up the pipeline: socket -> lineTransform -> response handler
@@ -248,7 +250,12 @@ export class MerkleKVClient {
         if (response === 'NOT_FOUND') {
             return null;
         } else if (response.startsWith('VALUE ')) {
-            return response.substring(6); // Remove 'VALUE ' prefix
+            const value = response.substring(6); // Remove 'VALUE ' prefix
+            // Handle quoted empty strings
+            if (value === '""') {
+                return '';
+            }
+            return value;
         } else {
             throw new ProtocolError(`Unexpected response: ${response}`);
         }
@@ -298,10 +305,46 @@ export class MerkleKVClient {
 
         const response = await this.sendCommand(`DELETE ${key}`);
         
-        if (response === 'OK') {
+        if (response === 'OK' || response === 'DELETED') {
             return true;
         } else {
             throw new ProtocolError(`Unexpected response: ${response}`);
+        }
+    }
+
+    /**
+     * Execute multiple commands in a pipeline for better performance.
+     * 
+     * @param commands - Array of command strings to execute
+     * @returns Array of responses in the same order as commands
+     * 
+     * @throws {ConnectionError} If not connected or connection fails
+     * @throws {TimeoutError} If operation times out
+     * @throws {ProtocolError} If server returns an error
+     */
+    async pipeline(commands: string[]): Promise<string[]> {
+        if (!commands || commands.length === 0) {
+            return [];
+        }
+
+        const promises = commands.map(command => this.sendCommand(command));
+        return Promise.all(promises);
+    }
+
+    /**
+     * Check server health by sending a PING command.
+     * 
+     * @returns True if server responds with PONG, false otherwise
+     * 
+     * @throws {ConnectionError} If not connected or connection fails
+     * @throws {TimeoutError} If operation times out
+     */
+    async healthCheck(): Promise<boolean> {
+        try {
+            const response = await this.sendCommand('PING');
+            return response === 'PONG';
+        } catch (error) {
+            return false;
         }
     }
 }
