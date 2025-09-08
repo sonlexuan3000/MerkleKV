@@ -66,7 +66,7 @@ client_id = "test_node"
     
     def test_sync_basic_operations(self, server_process):
         """Test basic sync operations against real server."""
-        client = MerkleKVClient("127.0.0.1", 7681, timeout=10.0)
+        client = MerkleKVClient("127.0.0.1", 7379, timeout=10.0)
         
         try:
             client.connect()
