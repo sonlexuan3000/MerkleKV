@@ -92,7 +92,7 @@ client_id = "test_node"
     @pytest.mark.asyncio
     async def test_async_basic_operations(self, server_process):
         """Test basic async operations against real server."""
-        client = AsyncMerkleKVClient("127.0.0.1", 7681, timeout=10.0)
+        client = AsyncMerkleKVClient("127.0.0.1", 7379, timeout=10.0)
         
         try:
             await client.connect()
@@ -113,14 +113,14 @@ client_id = "test_node"
     
     def test_sync_context_manager(self, server_process):
         """Test sync client as context manager."""
-        with MerkleKVClient("127.0.0.1", 7681, timeout=10.0) as client:
+        with MerkleKVClient("127.0.0.1", 7379, timeout=10.0) as client:
             client.set("context_key", "context_value")
             assert client.get("context_key") == "context_value"
     
     @pytest.mark.asyncio
     async def test_async_context_manager(self, server_process):
         """Test async client as context manager."""
-        async with AsyncMerkleKVClient("127.0.0.1", 7681, timeout=10.0) as client:
+        async with AsyncMerkleKVClient("127.0.0.1", 7379, timeout=10.0) as client:
             await client.set("async_context_key", "async_context_value")
             assert await client.get("async_context_key") == "async_context_value"
     
@@ -141,7 +141,7 @@ client_id = "test_node"
     
     def test_large_value(self, server_process):
         """Test handling of large values."""
-        client = MerkleKVClient("127.0.0.1", 7681, timeout=10.0)
+        client = MerkleKVClient("127.0.0.1", 7379, timeout=10.0)
         
         try:
             client.connect()
@@ -158,7 +158,7 @@ client_id = "test_node"
     
     def test_unicode_handling(self, server_process):
         """Test handling of unicode values."""
-        client = MerkleKVClient("127.0.0.1", 7681, timeout=10.0)
+        client = MerkleKVClient("127.0.0.1", 7379, timeout=10.0)
         
         try:
             client.connect()
