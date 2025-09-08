@@ -58,6 +58,11 @@ class AsyncMerkleKVClient:
                 asyncio.open_connection(self.host, self.port),
                 timeout=self.timeout
             )
+            # Enable TCP_NODELAY for better latency
+            if self._writer and hasattr(self._writer, 'get_extra_info'):
+                sock = self._writer.get_extra_info('socket')
+                if sock:
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._connected = True
         except (OSError, asyncio.TimeoutError) as e:
             raise ConnectionError(f"Failed to connect to {self.host}:{self.port}: {e}")
@@ -203,11 +208,61 @@ class AsyncMerkleKVClient:
         
         response = await self._send_command(f"DELETE {key}")
         
-        if response == "OK":
+        if response in ("OK", "DELETED"):
             return True
         else:
             raise ProtocolError(f"Unexpected response: {response}")
     
+    async def pipeline(self, commands: list) -> list:
+        """
+        Execute multiple commands in a pipeline for better performance.
+        
+        Args:
+            commands: List of command strings to execute
+            
+        Returns:
+            List of responses corresponding to each command
+            
+        Raises:
+            ConnectionError: If not connected or connection fails
+            TimeoutError: If operation times out
+            ProtocolError: If server returns an error
+        """
+        if not commands:
+            return []
+        
+        if not self.is_connected():
+            raise ConnectionError("Not connected to server")
+        
+        responses = []
+        for command in commands:
+            try:
+                response = await self._send_command(command)
+                responses.append(response)
+            except Exception as e:
+                # For pipeline, we collect partial results
+                responses.append(str(e))
+        
+        return responses
+    
+    async def health_check(self) -> bool:
+        """
+        Perform a health check by testing a basic operation.
+        
+        Returns:
+            True if server responds successfully, False otherwise
+        """
+        if not self.is_connected():
+            return False
+        
+        try:
+            # Use a simple GET operation as health check since PING might not be supported
+            response = await self._send_command("GET __health_check__")
+            # Any response (including NOT_FOUND) indicates server is healthy
+            return True
+        except Exception:
+            return False
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()

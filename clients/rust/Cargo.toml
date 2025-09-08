@@ -13,9 +13,11 @@ keywords = ["database", "key-value", "distributed", "merkle", "client"]
 categories = ["database", "network-programming", "api-bindings"]
 
 [dependencies]
-tokio = { version = "1.0", features = ["net", "time", "rt", "sync", "io-util", "macros", "rt-multi-thread"] }
+tokio = { version = "1.0", features = ["full"] }
 thiserror = "1.0"
 log = "0.4"
+serde_json = "1.0"
+env_logger = "0.10"
 
 [dev-dependencies]
 tokio-test = "0.4"

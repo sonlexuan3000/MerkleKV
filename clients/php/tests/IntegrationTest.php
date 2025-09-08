@@ -18,12 +18,17 @@ class IntegrationTest extends TestCase
 {
     private Client $client;
     private const TEST_HOST = "127.0.0.1";
-    private const TEST_PORT = 7379;
     private const TEST_TIMEOUT = 5.0;
+
+    private function getTestPort(): int
+    {
+        $envPort = getenv('MERKLEKV_PORT');
+        return $envPort !== false ? (int)$envPort : 7379;
+    }
 
     protected function setUp(): void
     {
-        $this->client = new Client(self::TEST_HOST, self::TEST_PORT, self::TEST_TIMEOUT);
+        $this->client = new Client(self::TEST_HOST, $this->getTestPort(), self::TEST_TIMEOUT);
         
         // Skip tests if server is not running
         try {

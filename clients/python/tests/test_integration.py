@@ -21,7 +21,7 @@ class TestIntegration:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
             f.write("""
 host = "127.0.0.1"
-port = 7879
+port = 7379
 storage_path = "/tmp/merkle_test_data"
 engine = "rwlock"
 sync_interval_seconds = 60
@@ -66,7 +66,7 @@ client_id = "test_node"
     
     def test_sync_basic_operations(self, server_process):
         """Test basic sync operations against real server."""
-        client = MerkleKVClient("127.0.0.1", 7879, timeout=10.0)
+        client = MerkleKVClient("127.0.0.1", 7681, timeout=10.0)
         
         try:
             client.connect()
@@ -92,7 +92,7 @@ client_id = "test_node"
     @pytest.mark.asyncio
     async def test_async_basic_operations(self, server_process):
         """Test basic async operations against real server."""
-        client = AsyncMerkleKVClient("127.0.0.1", 7879, timeout=10.0)
+        client = AsyncMerkleKVClient("127.0.0.1", 7681, timeout=10.0)
         
         try:
             await client.connect()
@@ -113,14 +113,14 @@ client_id = "test_node"
     
     def test_sync_context_manager(self, server_process):
         """Test sync client as context manager."""
-        with MerkleKVClient("127.0.0.1", 7879, timeout=10.0) as client:
+        with MerkleKVClient("127.0.0.1", 7681, timeout=10.0) as client:
             client.set("context_key", "context_value")
             assert client.get("context_key") == "context_value"
     
     @pytest.mark.asyncio
     async def test_async_context_manager(self, server_process):
         """Test async client as context manager."""
-        async with AsyncMerkleKVClient("127.0.0.1", 7879, timeout=10.0) as client:
+        async with AsyncMerkleKVClient("127.0.0.1", 7681, timeout=10.0) as client:
             await client.set("async_context_key", "async_context_value")
             assert await client.get("async_context_key") == "async_context_value"
     
@@ -140,12 +140,8 @@ client_id = "test_node"
             await client.connect()
     
     def test_large_value(self, server_process):
-        """Test handling of reasonably large values.
-        
-        Note: Server has response size limits around 1KB for GET operations.
-        This test uses a size that works within those constraints.
-        """
-        client = MerkleKVClient("127.0.0.1", 7879, timeout=10.0)
+        """Test handling of large values."""
+        client = MerkleKVClient("127.0.0.1", 7681, timeout=10.0)
         
         try:
             client.connect()
@@ -161,8 +157,8 @@ client_id = "test_node"
             client.close()
     
     def test_unicode_handling(self, server_process):
-        """Test Unicode string handling."""
-        client = MerkleKVClient("127.0.0.1", 7879, timeout=10.0)
+        """Test handling of unicode values."""
+        client = MerkleKVClient("127.0.0.1", 7681, timeout=10.0)
         
         try:
             client.connect()

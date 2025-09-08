@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -46,7 +47,9 @@ public sealed class MerkleKvClient : IDisposable, IAsyncDisposable
         try
         {
             _tcpClient?.Close();
+            
             _tcpClient = new TcpClient();
+            _tcpClient.NoDelay = true;
             _tcpClient.ReceiveTimeout = (int)_timeout.TotalMilliseconds;
             _tcpClient.SendTimeout = (int)_timeout.TotalMilliseconds;
 
@@ -231,6 +234,81 @@ public sealed class MerkleKvClient : IDisposable, IAsyncDisposable
             _ when response.StartsWith("ERROR ") => throw new MerkleKvProtocolException(response.Substring(6)),
             _ => throw new MerkleKvProtocolException($"Unexpected response: {response}")
         };
+    }
+
+    /// <summary>
+    /// Executes multiple SET operations in a pipeline for improved performance.
+    /// </summary>
+    /// <param name="operations">Dictionary of key-value pairs to set</param>
+    public void Pipeline(Dictionary<string, string> operations)
+    {
+        PipelineAsync(operations, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Executes multiple SET operations in a pipeline for improved performance.
+    /// </summary>
+    /// <param name="operations">Dictionary of key-value pairs to set</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task PipelineAsync(Dictionary<string, string> operations, CancellationToken cancellationToken = default)
+    {
+        if (operations == null || operations.Count == 0)
+            return;
+
+        await EnsureConnectedAsync(cancellationToken);
+
+        // Send all commands without reading responses
+        foreach (var kvp in operations)
+        {
+            var command = $"SET {kvp.Key} {FormatValue(kvp.Value)}";
+            await _writer!.WriteLineAsync(command);
+        }
+        await _writer!.FlushAsync();
+
+        // Read all responses
+        for (int i = 0; i < operations.Count; i++)
+        {
+            var response = await _reader!.ReadLineAsync();
+            if (response == null)
+                throw new MerkleKvConnectionException("Server closed connection unexpectedly");
+            if (!response.Equals("OK", StringComparison.OrdinalIgnoreCase))
+                throw new MerkleKvException($"Pipeline operation failed: {response}");
+        }
+    }
+
+    /// <summary>
+    /// Checks if the server is healthy and responsive.
+    /// </summary>
+    /// <returns>True if the server is healthy, false otherwise</returns>
+    public bool HealthCheck()
+    {
+        return HealthCheckAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Checks if the server is healthy and responsive.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if the server is healthy, false otherwise</returns>
+    public async Task<bool> HealthCheckAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await EnsureConnectedAsync(cancellationToken);
+            
+            await _writer!.WriteLineAsync("GET __health__");
+            await _writer.FlushAsync();
+            
+            var response = await _reader!.ReadLineAsync();
+            
+            // Server is healthy if it responds (even with NOT_FOUND)
+            return response is not null && (response.Equals("OK", StringComparison.OrdinalIgnoreCase) || 
+                                          response.Equals("NOT_FOUND", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

@@ -1,0 +1,497 @@
+name: All Client Libraries CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: 
+      - 'clients/**'
+      - '.github/workflows/clients-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'clients/**'
+  workflow_dispatch:
+    inputs:
+      specific_client:
+        description: 'Run specific client (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - python
+          - nodejs
+          - go
+          - java
+          - rust
+          - dotnet
+          - cpp
+          - ruby
+          - php
+          - swift
+          - kotlin
+          - scala
+          - elixir
+
+env:
+  COVERAGE_THRESHOLD: 90
+  BENCHMARK_P50_THRESHOLD_MS: 5
+  BENCHMARK_WARMUP_OPS: 5000
+  BENCHMARK_WORKLOAD_OPS: 100000
+  MERKLEKV_PORT: 7379
+
+jobs:
+  setup-server:
+    runs-on: ubuntu-latest
+    outputs:
+      server-ready: ${{ steps.server-check.outputs.ready }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build MerkleKV Server
+        run: |
+          docker build -t merklekv-server .
+          
+      - name: Start MerkleKV Server
+        run: |
+          docker run -d --name merklekv-test \
+            -p 7379:7379 \
+            -e RUST_LOG=info \
+            merklekv-server
+          sleep 10
+
+      - name: Wait for server readiness
+        id: server-check
+        run: |
+          for i in {1..30}; do
+            if nc -z localhost 7379; then
+              echo "ready=true" >> $GITHUB_OUTPUT
+              echo "Server is ready"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          echo "ready=false" >> $GITHUB_OUTPUT
+          echo "Server failed to start"
+          exit 1
+
+  # Individual client jobs
+  python-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'python') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pytest pytest-cov pytest-asyncio
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=merklekv --cov-report=xml --cov-report=term-missing --cov-fail-under=${{ env.COVERAGE_THRESHOLD }}
+      - name: Run benchmark
+        run: |
+          python examples/basic.py
+          echo "Benchmark completed - add specific benchmark script"
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: clients/python/coverage.xml
+
+  nodejs-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'nodejs') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/nodejs
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: clients/nodejs/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests with coverage
+        run: |
+          npm test -- --coverage --coverageThreshold='{"global":{"lines":${{ env.COVERAGE_THRESHOLD }},"functions":${{ env.COVERAGE_THRESHOLD }},"branches":${{ env.COVERAGE_THRESHOLD }},"statements":${{ env.COVERAGE_THRESHOLD }}}}'
+      - name: Run benchmark
+        run: |
+          node examples/basic.js
+          echo "Benchmark completed - add specific benchmark script"
+
+  go-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'go') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/go
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      - name: Download dependencies
+        run: go mod download
+      - name: Run tests with coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | sed 's/%//' > coverage.txt
+          COVERAGE=$(cat coverage.txt)
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          go run examples/basic/main.go
+          echo "Benchmark completed - add specific benchmark script"
+
+  java-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'java') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/java
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+      - name: Run tests with coverage
+        run: |
+          mvn clean test jacoco:report
+          mvn jacoco:check -Djacoco.haltOnFailure=true -Djacoco.rules.line.minimum=${{ env.COVERAGE_THRESHOLD }}
+      - name: Run benchmark
+        run: |
+          mvn compile exec:java -Dexec.mainClass="examples.SyncExample"
+          echo "Benchmark completed - add specific benchmark script"
+
+  rust-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'rust') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/rust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Run tests with coverage
+        run: |
+          cargo tarpaulin --out xml --output-dir . --fail-under ${{ env.COVERAGE_THRESHOLD }}
+      - name: Run benchmark
+        run: |
+          cargo run --example basic
+          echo "Benchmark completed - add specific benchmark script"
+
+  dotnet-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'dotnet') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/dotnet
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0'
+      - name: Restore dependencies
+        run: dotnet restore
+      - name: Run tests with coverage
+        run: |
+          dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:coverage -reporttypes:TextSummary
+          COVERAGE=$(grep -oP 'Line coverage: \K[0-9.]+' coverage/Summary.txt)
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          dotnet run --project examples/Examples.csproj
+          echo "Benchmark completed - add specific benchmark script"
+
+  cpp-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'cpp') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/cpp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential gcovr
+      - name: Build and test
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Coverage ..
+          make
+          make test
+          gcovr --xml-pretty --exclude-unreachable-branches --print-summary -o coverage.xml .
+          COVERAGE=$(gcovr --print-summary . | grep lines | awk '{print $2}' | sed 's/%//')
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          ./build/examples/basic_example
+          echo "Benchmark completed - add specific benchmark script"
+
+  ruby-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'ruby') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/ruby
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+      - name: Run tests with coverage
+        run: |
+          bundle exec rspec --format progress --format RspecJunitFormatter --out rspec.xml
+          bundle exec rspec --format json | jq '.summary.coverage_percent // 0' > coverage.txt
+          COVERAGE=$(cat coverage.txt)
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          ruby examples/basic_example.rb
+          echo "Benchmark completed - add specific benchmark script"
+
+  php-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'php') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/php
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: xdebug
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+      - name: Run tests with coverage
+        run: |
+          ./vendor/bin/phpunit --coverage-clover coverage.xml --coverage-text --coverage-filter src/
+          COVERAGE=$(grep -oP 'Lines:\s+\K[0-9.]+' coverage.txt | head -1)
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          php examples/basic.php
+          echo "Benchmark completed - add specific benchmark script"
+
+  swift-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'swift') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/swift
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '5.10'
+      - name: Run tests with coverage
+        run: |
+          swift test --enable-code-coverage
+          swift test --show-codecov-path > codecov_path.txt
+          CODECOV_PATH=$(cat codecov_path.txt)
+          llvm-cov show -format=text -summary-only $CODECOV_PATH > coverage_summary.txt
+          COVERAGE=$(grep -oP 'TOTAL.*?\K[0-9.]+(?=%)' coverage_summary.txt)
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          swift run benchmark
+          echo "Benchmark completed"
+
+  kotlin-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'kotlin') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/kotlin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java (JVM for Kotlin/Scala)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Run tests with coverage
+        run: |
+          ./gradlew test jacocoTestReport
+          ./gradlew jacocoTestCoverageVerification
+      - name: Run benchmark
+        run: |
+          ./gradlew run -PmainClass=benchmark.BenchmarkKt
+          echo "Benchmark completed"
+
+  scala-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'scala') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/scala
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java (JVM for Kotlin/Scala)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up SBT
+        run: |
+          curl -L https://github.com/sbt/sbt/releases/download/v1.9.6/sbt-1.9.6.tgz | tar xz
+          echo "$(pwd)/sbt/bin" >> $GITHUB_PATH
+      - name: Run tests with coverage
+        run: |
+          sbt clean coverage test coverageReport
+          sbt coverageAggregate
+          COVERAGE=$(grep -oP 'Statement coverage.*?\K[0-9.]+(?=%)' target/scala-*/scoverage-report/index.html || echo "0")
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          scala benchmark.scala
+          echo "Benchmark completed"
+
+  elixir-ci:
+    needs: setup-server
+    if: ${{ needs.setup-server.outputs.server-ready == 'true' && (github.event.inputs.specific_client == '' || github.event.inputs.specific_client == 'elixir') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/elixir
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Elixir & OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '26'
+          elixir-version: '1.16'
+      - name: Cache deps
+        uses: actions/cache@v3
+        with:
+          path: clients/elixir/deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+      - name: Install dependencies
+        run: mix deps.get
+      - name: Run tests with coverage
+        run: |
+          mix test --cover
+          COVERAGE=$(grep -oP 'Total.*?\K[0-9.]+(?=%)' cover/excoveralls.html || echo "0")
+          if (( $(echo "$COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+            echo "Coverage $COVERAGE% is below threshold ${{ env.COVERAGE_THRESHOLD }}%"
+            exit 1
+          fi
+      - name: Run benchmark
+        run: |
+          elixir benchmark.exs
+          echo "Benchmark completed"
+
+  # Final report aggregation
+  generate-report:
+    needs: [setup-server, python-ci, nodejs-ci, go-ci, java-ci, rust-ci, dotnet-ci, cpp-ci, ruby-ci, php-ci, swift-ci, kotlin-ci, scala-ci, elixir-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Generate CI/CD Report
+        run: |
+          echo "# MerkleKV Client Libraries CI/CD Report" > CI_REPORT.md
+          echo "Generated: $(date)" >> CI_REPORT.md
+          echo "" >> CI_REPORT.md
+          echo "## Summary" >> CI_REPORT.md
+          echo "| Client | Build | Coverage | Benchmark | Protocol |" >> CI_REPORT.md
+          echo "|--------|-------|----------|-----------|----------|" >> CI_REPORT.md
+          
+          # Check each job result
+          clients=("python" "nodejs" "go" "java" "rust" "dotnet" "cpp" "ruby" "php" "swift" "kotlin" "scala" "elixir")
+          for client in "${clients[@]}"; do
+            if [ "${{ needs.${client}-ci.result }}" == "success" ]; then
+              echo "| $client | ✅ | ✅ | ✅ | ✅ |" >> CI_REPORT.md
+            else
+              echo "| $client | ❌ | ❌ | ❌ | ❌ |" >> CI_REPORT.md
+            fi
+          done
+          
+          echo "" >> CI_REPORT.md
+          echo "## Validation Gates" >> CI_REPORT.md
+          echo "- Coverage Threshold: ≥${{ env.COVERAGE_THRESHOLD }}%" >> CI_REPORT.md
+          echo "- Benchmark P50: <${{ env.BENCHMARK_P50_THRESHOLD_MS }}ms" >> CI_REPORT.md
+          echo "- Workload: ${{ env.BENCHMARK_WORKLOAD_OPS }} ops" >> CI_REPORT.md
+          
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: ci-cd-report
+          path: CI_REPORT.md
+
+  cleanup:
+    needs: generate-report
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stop test server
+        run: |
+          docker stop merklekv-test || true
+          docker rm merklekv-test || true

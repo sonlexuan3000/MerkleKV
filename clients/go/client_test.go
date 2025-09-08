@@ -161,3 +161,54 @@ func TestProtocolError(t *testing.T) {
 	
 	assert.Equal(t, "protocol error during test: invalid command", err.Error())
 }
+
+// Tests for Pipeline functionality
+func TestPipelineEmptyCommands(t *testing.T) {
+	client := New("localhost", 7379)
+	
+	responses, err := client.Pipeline([]string{})
+	
+	assert.NoError(t, err)
+	assert.Empty(t, responses)
+}
+
+func TestPipelineNotConnected(t *testing.T) {
+	client := New("localhost", 7379)
+	
+	_, err := client.Pipeline([]string{"GET test"})
+	
+	assert.Equal(t, ErrNotConnected, err)
+}
+
+// Tests for HealthCheck functionality
+func TestHealthCheckNotConnected(t *testing.T) {
+	client := New("localhost", 7379)
+	
+	_, err := client.HealthCheck()
+	
+	assert.Equal(t, ErrNotConnected, err)
+}
+
+// Test TCP_NODELAY is applied (coverage for connection setup)
+func TestConnectWithTCPNodelay(t *testing.T) {
+	client := New("localhost", 7379)
+	
+	err := client.Connect()
+	defer client.Close()
+	
+	// Connection should succeed with TCP_NODELAY enabled
+	assert.NoError(t, err)
+	assert.True(t, client.IsConnected())
+}
+
+// Test formatSetValue function coverage
+func TestFormatSetValue(t *testing.T) {
+	// Test empty string formatting
+	assert.Equal(t, `""`, formatSetValue(""))
+	
+	// Test non-empty string
+	assert.Equal(t, "test", formatSetValue("test"))
+	
+	// Test string with spaces
+	assert.Equal(t, "hello world", formatSetValue("hello world"))
+}

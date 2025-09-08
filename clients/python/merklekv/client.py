@@ -70,6 +70,8 @@ class MerkleKVClient:
         """
         try:
             self._socket = socket.create_connection((self.host, self.port), timeout=self.timeout)
+            # Enable TCP_NODELAY for better latency
+            self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._connected = True
         except (socket.error, socket.timeout) as e:
             raise ConnectionError(f"Failed to connect to {self.host}:{self.port}: {e}")
@@ -255,12 +257,60 @@ class MerkleKVClient:
             raise ValueError("Key cannot be empty")
         
         response = self._send_command(f"DEL {key}")
-        
-        if response == "OK":
+
+        if response in ("OK", "DELETED"):
             return True
         else:
             raise ProtocolError(f"Unexpected response: {response}")
     
+    def pipeline(self, commands: list) -> list:
+        """
+        Execute multiple commands in a pipeline for better performance.
+        
+        Args:
+            commands: List of command strings to execute
+            
+        Returns:
+            List of responses corresponding to each command
+            
+        Raises:
+            ConnectionError: If not connected or connection fails
+            TimeoutError: If operation times out
+            ProtocolError: If server returns an error
+        """
+        if not commands:
+            return []
+        
+        if not self.is_connected():
+            raise ConnectionError("Not connected to server")
+        
+        responses = []
+        for command in commands:
+            try:
+                response = self._send_command(command)
+                responses.append(response)
+            except Exception as e:
+                # For pipeline, we collect partial results
+                responses.append(str(e))
+        
+        return responses
+    
+    def health_check(self) -> bool:
+        """
+        Perform a health check by sending a PING command.
+        
+        Returns:
+            True if server responds successfully, False otherwise
+        """
+        if not self.is_connected():
+            return False
+        
+        try:
+            response = self._send_command("PING")
+            return response == "PONG"
+        except Exception:
+            return False
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()

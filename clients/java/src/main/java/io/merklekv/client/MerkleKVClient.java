@@ -68,6 +68,7 @@ public class MerkleKVClient implements AutoCloseable {
             
             socket = new Socket(host, port);
             socket.setSoTimeout(timeoutMs);
+            socket.setTcpNoDelay(true); // Enable TCP_NODELAY for lower latency
             
             reader = new BufferedReader(new InputStreamReader(
                 socket.getInputStream(), StandardCharsets.UTF_8));
@@ -226,6 +227,80 @@ public class MerkleKVClient implements AutoCloseable {
      */
     public int getPort() {
         return port;
+    }
+
+    /**
+     * Execute multiple commands in a pipeline for improved performance.
+     * 
+     * @param commands list of commands to execute
+     * @return list of responses corresponding to each command
+     * @throws MerkleKVException if any command fails
+     */
+    public java.util.List<String> pipeline(java.util.List<String> commands) throws MerkleKVException {
+        ensureConnected();
+        
+        if (commands.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+
+        LOGGER.log(Level.FINE, "Executing pipeline with {0} commands", commands.size());
+        
+        try {
+            // Send all commands
+            for (String command : commands) {
+                writer.println(command);
+            }
+            writer.flush(); // Ensure all commands are sent
+
+            // Read all responses
+            java.util.List<String> responses = new java.util.ArrayList<>(commands.size());
+            for (int i = 0; i < commands.size(); i++) {
+                String response = reader.readLine();
+                if (response == null) {
+                    throw new ConnectionException("Connection closed while reading pipeline response");
+                }
+                
+                response = response.trim();
+                LOGGER.log(Level.FINEST, "Pipeline response {0}: {1}", new Object[]{i, response});
+                
+                // Check for protocol errors
+                if (response.startsWith("ERROR ")) {
+                    String errorMsg = response.substring(6);
+                    throw new ProtocolException("Command '" + commands.get(i) + "' failed: " + errorMsg);
+                }
+                
+                responses.add(response);
+            }
+            
+            return responses;
+            
+        } catch (SocketTimeoutException e) {
+            throw new TimeoutException("Pipeline operation timed out");
+        } catch (IOException e) {
+            connected = false;
+            throw new ConnectionException("Pipeline operation failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Perform a health check using GET __health__ command.
+     * According to specification, treats NOT_FOUND as healthy.
+     * 
+     * @return true if the server is healthy, false otherwise
+     */
+    public boolean healthCheck() {
+        try {
+            LOGGER.log(Level.FINE, "Performing health check");
+            String response = sendCommand("GET __health__");
+            LOGGER.log(Level.FINE, "Health check passed - server responded successfully");
+            return true;
+        } catch (KeyNotFoundException e) {
+            LOGGER.log(Level.FINE, "Health check passed - NOT_FOUND is considered healthy");
+            return true;
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Health check failed: {0}", e.getMessage());
+            return false;
+        }
     }
 
     /**
