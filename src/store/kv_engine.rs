@@ -160,11 +160,11 @@ impl KvEngine {
     }
 
     pub fn ping(&self, message: &str) -> String {
-        format!("PONG: {}", message)
+        format!("PONG {}", message)
     }
 
     pub fn echo(&self, message: &str) -> String {
-        format!("ECHO: {}", message)
+        format!("ECHO {}", message)
     }
 
     pub fn dbsize(&self) -> usize {

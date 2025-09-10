@@ -70,10 +70,10 @@ impl KVEngineStoreTrait for SledEngine {
             .collect()
     }
     fn ping(&self, message: &str) -> String {
-        format!("PONG: {}", message)
+        format!("PONG {}", message)
     }
     fn echo(&self, message: &str) -> String {
-        format!("ECHO: {}", message)
+        format!("ECHO {}", message)
     }
     fn dbsize(&self) -> usize {
         self.tree.len()
