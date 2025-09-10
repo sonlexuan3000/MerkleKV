@@ -224,7 +224,7 @@ impl Protocol {
             }
             
             match input.to_uppercase().as_str() {
-                "GET" | "SET" | "DELETE" | "DEL" | "SCAN" | "PING" | "ECHO" | "EXISTS" => {
+                "GET" | "SET" | "DELETE" | "DEL" | "SCAN" | "ECHO" | "EXISTS" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
                 }
                 "TRUNCATE" => return Ok(Command::Truncate),
@@ -232,6 +232,7 @@ impl Protocol {
                 "INFO" => return Ok(Command::Info),
                 "VERSION" => return Ok(Command::Version),
                 "FLUSH" => return Ok(Command::Flush),
+                "PING" => return Ok(Command::Ping { message: String::new() }),
                 "SHUTDOWN" => return Ok(Command::Shutdown),
                 "DBSIZE" => return Ok(Command::Dbsize),
                 _ => return Err(anyhow!("Unknown command: {}", input)),
