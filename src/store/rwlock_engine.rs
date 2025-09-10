@@ -193,7 +193,23 @@ impl KVEngineStoreTrait for RwLockEngine {
             .cloned()
             .collect()
     }
+    fn ping(&self, message: &str) -> String {
+        format!("PONG: {}", message)
+    }
 
+    fn echo(&self, message: &str) -> String {
+        format!("ECHO: {}", message)
+    }
+
+    fn dbsize(&self) -> usize {
+        let data = self.data.read().unwrap();
+        data.len()
+    }
+    
+    fn exists(&self, key: &str) -> bool {
+        let data = self.data.read().unwrap();
+        data.contains_key(key)
+    }
     /// Check if the store is empty.
     ///
     /// # Returns

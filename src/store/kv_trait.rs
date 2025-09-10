@@ -61,12 +61,34 @@ pub trait KVEngineStoreTrait: Send + Sync {
     /// * `Vec<String>` - Vector of keys matching the prefix
     fn scan(&self, prefix: &str) -> Vec<String>;
 
+    //Ping method
+    ///
+    /// # Returns
+    /// * `String` - Pong response with the message
+    fn ping(&self, message: &str) -> String;
+
+    /// Echo the provided message back to the client.
+    ///
+    /// # Arguments
+    /// * `message` - The message to echo back
+    fn echo(&self, message: &str) -> String;
+
+    /// Check if a key exists in the store.
+    /// # Arguments
+    /// * `key` - The key to check for existence
+    fn exists(&self, key: &str) -> bool;
+
     /// Get the number of key-value pairs in the store.
     ///
     /// # Returns
     /// * `usize` - Number of key-value pairs
     fn len(&self) -> usize;
 
+    /// Get the size of the database (number of key-value pairs).
+    /// # Returns
+    /// * `usize` - Size of the database
+    fn dbsize(&self) -> usize;
+    
     /// Check if the store is empty.
     ///
     /// # Returns
