@@ -159,6 +159,21 @@ impl KvEngine {
             .collect()
     }
 
+    pub fn ping(&self, message: &str) -> String {
+        format!("PONG {}", message)
+    }
+
+    pub fn echo(&self, message: &str) -> String {
+        format!("ECHO {}", message)
+    }
+
+    pub fn dbsize(&self) -> usize {
+        self.data.read().unwrap().len()
+    }
+
+    pub fn exists(&self, key: &str) -> bool {
+        self.data.read().unwrap().contains_key(key)
+    }
     /// Increment a numeric value stored at the given key.
     /// 
     /// If the key doesn't exist, it will be created with the increment amount.
@@ -384,6 +399,16 @@ impl KVEngineStoreTrait for KvEngine {
             .filter(|k| k.starts_with(prefix))
             .collect()
     }
+
+    fn ping(&self, message: &str) -> String {
+        format!("PONG {}", message)
+    }
+
+    fn echo(&self, message: &str) -> String {
+        format!("ECHO {}", message)
+    }
+
+    
     /// Get the number of key-value pairs in the store.
     ///
     /// # Returns
@@ -392,6 +417,13 @@ impl KVEngineStoreTrait for KvEngine {
         self.data.read().unwrap().len()
     }
 
+    fn dbsize(&self) -> usize {
+        self.data.read().unwrap().len()
+    }
+    
+    fn exists(&self, key: &str) -> bool {
+        self.data.read().unwrap().contains_key(key)
+    }
     /// Check if the store is empty.
     ///
     /// # Returns

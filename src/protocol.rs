@@ -75,7 +75,21 @@ pub enum Command {
         /// The key to delete
         key: String,
     },
-
+    /// Ping the server with an optional message
+    Ping {
+        /// The message to include in the ping response
+        message: String,
+    },
+    /// Echo the provided message back to the client
+    Echo {
+        /// The message to echo back
+        message: String,
+    },
+    /// Check if a key exists
+    Exists {
+        /// The key to check for existence
+        keys: Vec<String>,
+    },
     /// Scan for keys matching a prefix
     Scan {
         /// The prefix to scan for
@@ -133,10 +147,10 @@ pub enum Command {
     
     /// Return detailed server information (version, uptime, config)
     Info,
-    
-    /// Simple health check command
-    Ping,
-    
+
+    /// Return the current keystore size
+    Dbsize,
+
     /// Return server version
     Version,
     
@@ -210,16 +224,17 @@ impl Protocol {
             }
             
             match input.to_uppercase().as_str() {
-                "GET" | "SET" | "DELETE" | "DEL" | "SCAN" => {
+                "GET" | "SET" | "DELETE" | "DEL" | "SCAN" | "ECHO" | "EXISTS" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
                 }
                 "TRUNCATE" => return Ok(Command::Truncate),
                 "STATS" => return Ok(Command::Stats),
                 "INFO" => return Ok(Command::Info),
-                "PING" => return Ok(Command::Ping),
                 "VERSION" => return Ok(Command::Version),
                 "FLUSH" => return Ok(Command::Flush),
+                "PING" => return Ok(Command::Ping { message: String::new() }),
                 "SHUTDOWN" => return Ok(Command::Shutdown),
+                "DBSIZE" => return Ok(Command::Dbsize),
                 _ => return Err(anyhow!("Unknown command: {}", input)),
             }
         }
@@ -303,6 +318,65 @@ impl Protocol {
                 Ok(Command::Delete {
                     key: rest.to_string(),
                 })
+            }
+            "DBSIZE" => {
+                if !rest.is_empty() {
+                    return Err(anyhow!("DBSIZE command does not accept any arguments"));
+                }
+                Ok(Command::Dbsize)
+            }
+            "PING" => {
+                // Allow optional message after PING
+                if rest.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in message"));
+                }
+                if rest.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in message"));
+                }
+                Ok(Command::Ping {
+                    message: rest.to_string(),
+                })
+            }
+            "ECHO" => {
+                // Require a message after ECHO
+                if rest.is_empty() {
+                    return Err(anyhow!("ECHO command requires a message"));
+                }
+                if rest.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in message"));
+                }
+                if rest.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in message"));
+                }
+                Ok(Command::Echo {
+                    message: rest.to_string(),
+                })
+            }
+            "EXISTS" => {
+                if rest.is_empty() {
+                    return Err(anyhow!("EXISTS command requires at least one key"));
+                }
+                
+                // Extract all keys
+                let keys: Vec<String> = rest.split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+
+                if keys.is_empty() {
+                    return Err(anyhow!("EXISTS command requires at least one key"));
+                }
+
+                // Check for invalid characters in all keys
+                for key in &keys {
+                    if key.contains('\t') {
+                        return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                    }
+                    if key.contains('\n') {
+                        return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                    }
+                }
+
+                Ok(Command::Exists { keys })
             }
             "SCAN" => {
                 if rest.is_empty() {
@@ -530,9 +604,6 @@ impl Protocol {
             "INFO" => {
                 Ok(Command::Info)
             }
-            "PING" => {
-                Ok(Command::Ping)
-            }
             _ => Err(anyhow!("Unknown command: {}", command)),
         }
     }
@@ -604,7 +675,50 @@ mod tests {
         // Test SCAN with spaces in prefix
         assert!(protocol.parse("SCAN test prefix").is_err());
     }
+    #[test]
+    fn test_parse_ping() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("PING Hello").unwrap();
+        assert_eq!(
+            result,
+            Command::Ping {
+                message: "Hello".to_string()
+            }
+        );
+        
+        // Test PING with no message
+        let result = protocol.parse("PING").unwrap();
+        assert_eq!(
+            result,
+            Command::Ping {
+                message: "".to_string()
+            }
+        );
+    }
 
+    #[test]
+    fn test_parse_echo() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("ECHO Hello, World!").unwrap();
+        assert_eq!(
+            result,
+            Command::Echo {
+                message: "Hello, World!".to_string()
+            }
+        );
+        
+        // Test ECHO with no message (should error)
+        assert!(protocol.parse("ECHO").is_err());
+    }
+    #[test]
+    fn test_parse_dbsize() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("DBSIZE").unwrap();
+        assert_eq!(result, Command::Dbsize);
+        
+        // Test DBSIZE with extra arguments (should error)
+        assert!(protocol.parse("DBSIZE extra_arg").is_err());
+    }
     #[test]
     fn test_parse_increment() {
         let protocol = Protocol::new();

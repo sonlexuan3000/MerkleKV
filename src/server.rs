@@ -62,7 +62,19 @@ pub struct ServerStats {
 
     /// Number of SCAN commands processed
     pub scan_commands: AtomicU64,
-    
+
+    /// Number of PING commands processed
+    pub ping_commands: AtomicU64,
+
+    /// Number of ECHO commands processed
+    pub echo_commands: AtomicU64,
+
+    /// Number of DB size commands processed
+    pub dbsize_commands: AtomicU64,
+
+    /// Number of EXISTS commands processed
+    pub exists_commands: AtomicU64,
+
     /// Number of SET commands processed
     pub set_commands: AtomicU64,
     
@@ -96,6 +108,10 @@ impl Clone for ServerStats {
             total_commands: AtomicU64::new(self.total_commands.load(Ordering::Relaxed)),
             get_commands: AtomicU64::new(self.get_commands.load(Ordering::Relaxed)),
             scan_commands: AtomicU64::new(self.scan_commands.load(Ordering::Relaxed)),
+            ping_commands: AtomicU64::new(self.ping_commands.load(Ordering::Relaxed)),
+            echo_commands: AtomicU64::new(self.echo_commands.load(Ordering::Relaxed)),
+            exists_commands: AtomicU64::new(self.exists_commands.load(Ordering::Relaxed)),
+            dbsize_commands: AtomicU64::new(self.dbsize_commands.load(Ordering::Relaxed)),
             set_commands: AtomicU64::new(self.set_commands.load(Ordering::Relaxed)),
             delete_commands: AtomicU64::new(self.delete_commands.load(Ordering::Relaxed)),
             numeric_commands: AtomicU64::new(self.numeric_commands.load(Ordering::Relaxed)),
@@ -124,6 +140,10 @@ impl ServerStats {
             total_commands: AtomicU64::new(0),
             get_commands: AtomicU64::new(0),
             scan_commands: AtomicU64::new(0),
+            echo_commands: AtomicU64::new(0),
+            ping_commands: AtomicU64::new(0),
+            exists_commands: AtomicU64::new(0),
+            dbsize_commands: AtomicU64::new(0),
             set_commands: AtomicU64::new(0),
             delete_commands: AtomicU64::new(0),
             numeric_commands: AtomicU64::new(0),
@@ -162,6 +182,18 @@ impl ServerStats {
             Command::Scan { .. } => {
                 self.scan_commands.fetch_add(1, Ordering::Relaxed);
             }
+            Command::Ping { .. } => {
+                self.ping_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Echo { .. } => {
+                self.echo_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Dbsize => {
+                self.dbsize_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Exists { .. } => {
+                self.exists_commands.fetch_add(1, Ordering::Relaxed);
+            }
             Command::Set { .. } => {
                 self.set_commands.fetch_add(1, Ordering::Relaxed);
             }
@@ -177,7 +209,7 @@ impl ServerStats {
             Command::MultiGet { .. } | Command::MultiSet { .. } | Command::Truncate => {
                 self.bulk_commands.fetch_add(1, Ordering::Relaxed);
             }
-            Command::Stats | Command::Info | Command::Ping => {
+            Command::Stats | Command::Info => {
                 self.stat_commands.fetch_add(1, Ordering::Relaxed);
             }
             Command::Version | Command::Flush | Command::Shutdown => {
@@ -197,6 +229,10 @@ impl ServerStats {
         result.push_str(&format!("total_commands:{}\r\n", self.total_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("get_commands:{}\r\n", self.get_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("scan_commands:{}\r\n", self.scan_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("ping_commands:{}\r\n", self.ping_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("echo_commands:{}\r\n", self.echo_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("exists_commands:{}\r\n", self.exists_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("dbsize_commands:{}\r\n", self.dbsize_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("set_commands:{}\r\n", self.set_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("delete_commands:{}\r\n", self.delete_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("numeric_commands:{}\r\n", self.numeric_commands.load(Ordering::Relaxed)));
@@ -417,6 +453,31 @@ impl Server {
                                 None => "NOT_FOUND\r\n".to_string(),
                             }
                         }
+                        Command::Ping { message } => {
+                            let store = store.lock().await;
+                            let pong_response = store.ping(&message);
+                            format!("{}\r\n", pong_response)
+                        }
+                        Command::Echo { message } => {
+                            let store = store.lock().await;
+                            let echo_response = store.echo(&message);
+                            format!("{}\r\n", echo_response)
+                        }
+                        Command::Dbsize => {
+                            let store = store.lock().await;
+                            let size = store.dbsize();
+                            format!("DBSIZE {}\r\n", size)
+                        }
+                        Command::Exists { keys } => {
+                            let store = store.lock().await;
+                            let mut count = 0;
+                            for key in keys {
+                                if store.exists(&key) {
+                                    count += 1;
+                                }
+                            }
+                            format!("EXISTS {}\r\n", count)
+                        }
                         Command::Scan { prefix } => {
                             let store = store.lock().await;
                             let results = store.scan(&prefix);
@@ -623,9 +684,6 @@ impl Server {
                             info.push_str(&format!("db_keys:{}\r\n", key_count));
                             
                             format!("INFO\r\n{}", info)
-                        }
-                        Command::Ping => {
-                            "PONG\r\n".to_string()
                         }
                         Command::Version => {
                             // Return the server version from Cargo.toml

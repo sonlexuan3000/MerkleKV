@@ -69,6 +69,21 @@ impl KVEngineStoreTrait for SledEngine {
             )
             .collect()
     }
+    fn ping(&self, message: &str) -> String {
+        format!("PONG {}", message)
+    }
+    fn echo(&self, message: &str) -> String {
+        format!("ECHO {}", message)
+    }
+    fn dbsize(&self) -> usize {
+        self.tree.len()
+    }
+    fn exists(&self, key: &str) -> bool {
+        match self.tree.get(key) {
+            Ok(opt) => opt.is_some(),
+            Err(_) => false,
+        }
+    }
     fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64> {
         let amt = amount.unwrap_or(1);
         // get current
