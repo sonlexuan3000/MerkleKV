@@ -174,6 +174,16 @@ impl KvEngine {
     pub fn exists(&self, key: &str) -> bool {
         self.data.read().unwrap().contains_key(key)
     }
+    pub fn memory_usage(&self) -> usize {
+        // Rough estimate: size of HashMap + sizes of keys and values
+        let map = self.data.read().unwrap();
+        let mut size = std::mem::size_of_val(&*map);
+        for (k, v) in map.iter() {
+            size += std::mem::size_of_val(k) + k.len();
+            size += std::mem::size_of_val(v) + v.len();
+        }
+        size
+    }
     /// Increment a numeric value stored at the given key.
     /// 
     /// If the key doesn't exist, it will be created with the increment amount.
@@ -423,6 +433,17 @@ impl KVEngineStoreTrait for KvEngine {
     
     fn exists(&self, key: &str) -> bool {
         self.data.read().unwrap().contains_key(key)
+    }
+
+    fn memory_usage(&self) -> usize {
+        // Rough estimate: size of HashMap + sizes of keys and values
+        let map = self.data.read().unwrap();
+        let mut size = std::mem::size_of_val(&*map);
+        for (k, v) in map.iter() {
+            size += std::mem::size_of_val(k) + k.len();
+            size += std::mem::size_of_val(v) + v.len();
+        }
+        size
     }
     /// Check if the store is empty.
     ///

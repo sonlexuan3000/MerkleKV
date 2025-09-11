@@ -37,7 +37,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-
+use std::collections::HashMap; 
 use crate::config::Config;
 use crate::protocol::{Command, Protocol};
 use crate::replication::Replicator;
@@ -75,6 +75,15 @@ pub struct ServerStats {
     /// Number of EXISTS commands processed
     pub exists_commands: AtomicU64,
 
+    /// Number of FLUSHDB commands processed
+    pub flushdb_commands: AtomicU64,
+
+    /// Number of MEMORY commands processed
+    pub memory_commands: AtomicU64,
+
+    /// Number of CLIENT commands processed
+    pub clientlist_commands: AtomicU64,
+
     /// Number of SET commands processed
     pub set_commands: AtomicU64,
     
@@ -100,6 +109,14 @@ pub struct ServerStats {
     pub start_time: Instant,
 }
 
+struct ClientMeta {
+    id: u64,
+    addr: SocketAddr,
+    connected_unix: u64,                    // thời điểm connect (epoch seconds)
+    last_cmd_unix: std::sync::atomic::AtomicU64, // lần cuối gửi lệnh (epoch seconds)
+}
+type ClientTable = Arc<tokio::sync::Mutex<HashMap<u64, Arc<ClientMeta>>>>;
+
 impl Clone for ServerStats {
     fn clone(&self) -> Self {
         Self {
@@ -111,6 +128,9 @@ impl Clone for ServerStats {
             ping_commands: AtomicU64::new(self.ping_commands.load(Ordering::Relaxed)),
             echo_commands: AtomicU64::new(self.echo_commands.load(Ordering::Relaxed)),
             exists_commands: AtomicU64::new(self.exists_commands.load(Ordering::Relaxed)),
+            flushdb_commands: AtomicU64::new(self.flushdb_commands.load(Ordering::Relaxed)),
+            memory_commands: AtomicU64::new(self.memory_commands.load(Ordering::Relaxed)),
+            clientlist_commands: AtomicU64::new(self.clientlist_commands.load(Ordering::Relaxed)),
             dbsize_commands: AtomicU64::new(self.dbsize_commands.load(Ordering::Relaxed)),
             set_commands: AtomicU64::new(self.set_commands.load(Ordering::Relaxed)),
             delete_commands: AtomicU64::new(self.delete_commands.load(Ordering::Relaxed)),
@@ -143,7 +163,10 @@ impl ServerStats {
             echo_commands: AtomicU64::new(0),
             ping_commands: AtomicU64::new(0),
             exists_commands: AtomicU64::new(0),
+            flushdb_commands: AtomicU64::new(0),
+            clientlist_commands: AtomicU64::new(0),
             dbsize_commands: AtomicU64::new(0),
+            memory_commands: AtomicU64::new(0),
             set_commands: AtomicU64::new(0),
             delete_commands: AtomicU64::new(0),
             numeric_commands: AtomicU64::new(0),
@@ -212,7 +235,13 @@ impl ServerStats {
             Command::Stats | Command::Info => {
                 self.stat_commands.fetch_add(1, Ordering::Relaxed);
             }
-            Command::Version | Command::Flush | Command::Shutdown => {
+            Command::Version | Command::Flushdb | Command::Shutdown => {
+                self.management_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Memory => {
+                self.memory_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Clientlist => {
                 self.management_commands.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -231,6 +260,9 @@ impl ServerStats {
         result.push_str(&format!("scan_commands:{}\r\n", self.scan_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("ping_commands:{}\r\n", self.ping_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("echo_commands:{}\r\n", self.echo_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("flushdb_commands:{}\r\n", self.flushdb_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("memory_commands:{}\r\n", self.memory_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("clientlist_commands:{}\r\n", self.clientlist_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("exists_commands:{}\r\n", self.exists_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("dbsize_commands:{}\r\n", self.dbsize_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("set_commands:{}\r\n", self.set_commands.load(Ordering::Relaxed)));
@@ -313,6 +345,9 @@ impl Server {
     /// server.run().await?; // Runs forever
     /// ```
     pub async fn run(self) -> Result<()> {
+        let clients: ClientTable = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let client_id_gen = Arc::new(AtomicU64::new(0));
+
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
         info!("Server listening on {}", addr);
@@ -349,8 +384,26 @@ impl Server {
                     
                     // Spawn a new task for each client connection
                     let repl_clone = replicator_opt.clone();
+
+                    let id = client_id_gen.fetch_add(1, Ordering::Relaxed) + 1;
+                    let now_unix = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or(Duration::from_secs(0))
+                        .as_secs();
+                    let meta = Arc::new(ClientMeta {
+                        id,
+                        addr,
+                        connected_unix: now_unix,
+                        last_cmd_unix: AtomicU64::new(now_unix),
+                    });
+                    {
+                        let mut tbl = clients.lock().await;
+                        tbl.insert(id, Arc::clone(&meta));
+                    }
+                    let clients_clone = Arc::clone(&clients);
+                    let meta_clone = Arc::clone(&meta);
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone).await {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone, meta_clone, clients_clone.clone()).await {
                             error!("Error handling connection from {}: {}", addr, e);
                         }
                         
@@ -395,7 +448,9 @@ impl Server {
         addr: SocketAddr,
         store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
         stats: Arc<ServerStats>,
-    replicator: Option<Replicator>,
+        replicator: Option<Replicator>,
+        client_meta: Arc<ClientMeta>,
+        clients: ClientTable,
     ) -> Result<()> {
         let (read_half, mut write_half) = socket.into_split();
         let mut reader = BufReader::new(read_half);
@@ -439,6 +494,11 @@ impl Server {
 
             match protocol.parse(&request_line) {
                 Ok(command) => {
+                    let now_unix = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or(Duration::from_secs(0))
+                        .as_secs();
+                    client_meta.last_cmd_unix.store(now_unix, Ordering::Relaxed);
                     // Update command statistics
                     stats.increment_command_counter(&command);
                     
@@ -508,6 +568,35 @@ impl Server {
                             } else {
                                 "NOT_FOUND\r\n".to_string()
                             }
+                        }
+                        Command::Memory => {
+                            let store = store.lock().await;
+                            let usage = store.memory_usage();
+                            format!("MEMORY {}\r\n", usage)
+                        }
+                        Command::Clientlist => {
+
+                            let snapshot: Vec<Arc<ClientMeta>> = {
+                                let tbl = clients.lock().await;
+                                tbl.values().cloned().collect()
+                            };
+                            let now = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or(Duration::from_secs(0))
+                                .as_secs();
+
+                            let mut out = String::new();
+                            out.push_str("CLIENT LIST\r\n");
+                            for c in snapshot {
+                                let age = now.saturating_sub(c.connected_unix);
+                                let idle = now.saturating_sub(c.last_cmd_unix.load(Ordering::Relaxed));
+                                out.push_str(&format!(
+                                    "id={} addr={} age={} idle={}\r\n",
+                                    c.id, c.addr, age, idle
+                                ));
+                            }
+                            out.push_str("END\r\n");
+                            out
                         }
                         Command::Increment { key, amount } => {
                             // Check if the key already exists
@@ -689,9 +778,9 @@ impl Server {
                             // Return the server version from Cargo.toml
                             format!("VERSION {}\r\n", env!("CARGO_PKG_VERSION"))
                         }
-                        Command::Flush => {
+                        Command::Flushdb => {
                             // Force sync to disk if the storage engine supports it
-                            let res = { let store = store.lock().await; store.sync() };
+                            let res = { let store = store.lock().await; store.truncate() };
                             match res {
                                 Ok(_) => "OK\r\n".to_string(),
                                 Err(e) => format!("ERROR {}\r\n", e),

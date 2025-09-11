@@ -84,6 +84,11 @@ impl KVEngineStoreTrait for SledEngine {
             Err(_) => false,
         }
     }
+    fn memory_usage(&self) -> usize {
+        // Sled does not provide a direct way to get memory usage.
+        // This is a rough estimate based on the number of entries.
+        self.tree.len() * 100 // Assume average 100 bytes per entry
+    }
     fn increment(&self, key: &str, amount: Option<i64>) -> Result<i64> {
         let amt = amount.unwrap_or(1);
         // get current

@@ -155,10 +155,16 @@ pub enum Command {
     Version,
     
     /// Force replication of pending changes
-    Flush,
+    Flushdb,
     
     /// Gracefully shut down the server
     Shutdown,
+
+    /// Get memory usage    
+    Memory,
+
+    /// List connected clients
+    Clientlist,
 }
 
 /// Protocol parser that converts text commands into structured Command enums.
@@ -231,7 +237,9 @@ impl Protocol {
                 "STATS" => return Ok(Command::Stats),
                 "INFO" => return Ok(Command::Info),
                 "VERSION" => return Ok(Command::Version),
-                "FLUSH" => return Ok(Command::Flush),
+                "FLUSHDB" => return Ok(Command::Flushdb),
+                "MEMORY" => return Ok(Command::Memory),
+                "CLIENT" => return Ok(Command::Clientlist),
                 "PING" => return Ok(Command::Ping { message: String::new() }),
                 "SHUTDOWN" => return Ok(Command::Shutdown),
                 "DBSIZE" => return Ok(Command::Dbsize),
@@ -377,6 +385,20 @@ impl Protocol {
                 }
 
                 Ok(Command::Exists { keys })
+            }
+            "MEMORY" => {
+                if !rest.is_empty() {
+                    return Err(anyhow!("MEMORY command does not accept any arguments"));
+                }
+                Ok(Command::Memory)
+            }
+            "CLIENT" => {
+                let mut it = rest.split_whitespace();
+                let sub = it.next().unwrap_or("").to_ascii_uppercase();
+                match sub.as_str() {
+                    "LIST" => Ok(Command::Clientlist),
+                    _ => Err(anyhow::anyhow!("Unknown CLIENT subcommand")),
+                }
             }
             "SCAN" => {
                 if rest.is_empty() {
@@ -594,6 +616,12 @@ impl Protocol {
                 }
                 
                 Ok(Command::MultiSet { pairs })
+            }
+            "FLUSHDB" => {
+                Ok(Command::Flushdb)
+            }
+            "MEMORY" => {
+                Ok(Command::Memory)
             }
             "TRUNCATE" => {
                 Ok(Command::Truncate)
@@ -891,10 +919,10 @@ mod tests {
     }
     
     #[test]
-    fn test_parse_flush() {
+    fn test_parse_flushdb() {
         let protocol = Protocol::new();
-        let result = protocol.parse("FLUSH").unwrap();
-        assert_eq!(result, Command::Flush);
+        let result = protocol.parse("FLUSHDB").unwrap();
+        assert_eq!(result, Command::Flushdb);
     }
     
     #[test]
