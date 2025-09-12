@@ -78,6 +78,12 @@ pub trait KVEngineStoreTrait: Send + Sync {
     /// * `key` - The key to check for existence
     fn exists(&self, key: &str) -> bool;
 
+    /// Get the memory usage of the store.
+    ///
+    /// # Returns
+    /// * `usize` - Estimated memory usage in bytes
+    fn memory_usage(&self) -> usize;
+
     /// Get the number of key-value pairs in the store.
     ///
     /// # Returns

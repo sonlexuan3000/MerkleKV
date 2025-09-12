@@ -33,7 +33,8 @@ def main():
             "test_bulk_ops_manual.py",
             "test_mget_fix.py",
             "test_storage_persistence.py",
-            "test_scan_tcp.py"
+            "test_scan_tcp.py",
+            "test_admin_command.py"
         ],
         "Advanced Features": [
             "test_concurrency.py",
