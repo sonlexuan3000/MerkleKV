@@ -723,7 +723,6 @@ mod tests {
             }
         );
     }
-
     #[test]
     fn test_parse_echo() {
         let protocol = Protocol::new();
@@ -746,6 +745,52 @@ mod tests {
         
         // Test DBSIZE with extra arguments (should error)
         assert!(protocol.parse("DBSIZE extra_arg").is_err());
+    }
+    #[test]
+    fn test_parse_exists() {
+        let protocol = Protocol::new();
+        
+        // Test with a single key
+        let result = protocol.parse("EXISTS key1").unwrap();
+        assert_eq!(
+            result,
+            Command::Exists {
+                keys: vec!["key1".to_string()]
+            }
+        );
+        
+        // Test with multiple keys
+        let result = protocol.parse("EXISTS key1 key2 key3").unwrap();
+        assert_eq!(
+            result,
+            Command::Exists {
+                keys: vec!["key1".to_string(), "key2".to_string(), "key3".to_string()]
+            }
+        );
+        
+        // Test with no keys (should error)
+        assert!(protocol.parse("EXISTS").is_err());
+    }
+    #[test]
+    fn test_parse_memory() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("MEMORY").unwrap();
+        assert_eq!(result, Command::Memory);
+        
+        // Test MEMORY with extra arguments (should error)
+        assert!(protocol.parse("MEMORY extra_arg").is_err());
+    }
+    #[test]
+    fn test_parse_clientlist() {
+        let protocol = Protocol::new();
+        let result = protocol.parse("CLIENT LIST").unwrap();
+        assert_eq!(result, Command::Clientlist);
+        
+        // Test CLIENT with unknown subcommand (should error)
+        assert!(protocol.parse("CLIENT UNKNOWN").is_err());
+        
+        // Test CLIENT with no subcommand (should error)
+        assert!(protocol.parse("CLIENT").is_err());
     }
     #[test]
     fn test_parse_increment() {
