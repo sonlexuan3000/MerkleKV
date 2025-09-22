@@ -1,5 +1,5 @@
 host = "0.0.0.0"
-port = 7379
+port = 7378
 storage_path = "data"
 engine = "rwlock"
 sync_interval_seconds = 60
@@ -9,4 +9,4 @@ enabled = false
 mqtt_broker = "localhost"
 mqtt_port = 1883
 topic_prefix = "merkle_kv"
-client_id = "node1"
+client_id = "node2"

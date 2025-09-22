@@ -55,6 +55,11 @@ use anyhow::{anyhow, Result};
 ///
 /// Each command variant contains the necessary data to execute the operation.
 #[derive(Debug, Clone, PartialEq)]
+pub struct SyncOptions {
+    pub full: bool,
+    pub verify: bool,
+}
+#[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     /// Retrieve a value by its key
     Get {
@@ -94,6 +99,11 @@ pub enum Command {
     Scan {
         /// The prefix to scan for
         prefix: String,
+    },
+    /// Hash a key (not implemented)
+    Hash {
+        /// The key to hash
+        pattern: Option<String>
     },
     /// Increment a numeric value
     Increment {
@@ -139,6 +149,11 @@ pub enum Command {
         pairs: Vec<(String, String)>,
     },
 
+    Sync {
+        host: String,    
+        port: u16,
+        options: SyncOptions,
+    },
     /// Clear all keys/values in the store
     Truncate,
     
@@ -170,6 +185,7 @@ pub enum Command {
 /// Protocol parser that converts text commands into structured Command enums.
 ///
 /// This parser is stateless and can be safely shared across threads.
+
 pub struct Protocol;
 
 impl Protocol {
@@ -230,7 +246,7 @@ impl Protocol {
             }
             
             match input.to_uppercase().as_str() {
-                "GET" | "SET" | "DELETE" | "DEL" | "SCAN" | "ECHO" | "EXISTS" => {
+                "GET" | "SET" | "DELETE" | "DEL" | "ECHO" | "EXISTS" | "SYNC" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
                 }
                 "TRUNCATE" => return Ok(Command::Truncate),
@@ -239,6 +255,8 @@ impl Protocol {
                 "VERSION" => return Ok(Command::Version),
                 "FLUSHDB" => return Ok(Command::Flushdb),
                 "MEMORY" => return Ok(Command::Memory),
+                "SCAN" => return Ok(Command::Scan { prefix: String::new() }),
+                "HASH" => return Ok(Command::Hash { pattern: None }),
                 "CLIENT" => return Ok(Command::Clientlist),
                 "PING" => return Ok(Command::Ping { message: String::new() }),
                 "SHUTDOWN" => return Ok(Command::Shutdown),
@@ -386,6 +404,105 @@ impl Protocol {
 
                 Ok(Command::Exists { keys })
             }
+            "SYNC" => {
+                // Syntax: SYNC <host> <port> [--full] [--verify]
+                // Examples:
+                //   SYNC 192.168.1.10 7878
+                //   SYNC example.com 7878 --full --verify
+                //   SYNC [::1] 7878 --verify
+
+                if rest.is_empty() {
+                    return Err(anyhow!("SYNC requires arguments: <host> <port> [--full] [--verify]"));
+                }
+
+                // Split by ASCII whitespace
+                let mut it = rest.split_whitespace();
+
+                // --- host ---
+                let host = it
+                    .next()
+                    .ok_or_else(|| anyhow!("SYNC requires <host> as the first argument"))?
+                    .to_string();
+
+                // Basic protocol hygiene: forbid TAB/NEWLINE inside host token
+                if host.contains('\t') || host.contains('\n') {
+                    return Err(anyhow!("Invalid character in host: tabs/newlines are not allowed"));
+                }
+                // (Optional hardening: uncomment to strictly validate DNS hostname or IPv6 literal)
+                // if !(is_valid_hostname(&host) || is_ipv6_literal(&host)) {
+                //     return Err(anyhow!("Invalid host format"));
+                // }
+
+                // --- port ---
+                let port_str = it
+                    .next()
+                    .ok_or_else(|| anyhow!("SYNC requires <port> as the second argument"))?;
+                if port_str.contains('\t') || port_str.contains('\n') {
+                    return Err(anyhow!("Invalid character in port: tabs/newlines are not allowed"));
+                }
+
+                // TCP/UDP ports are 16-bit unsigned integers: 0..=65535 (IANA) 
+                // We parse to u16 to enforce the range.
+                let port: u16 = port_str
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid port: must be an integer in 0..=65535"))?;
+
+                // --- options ---
+                // Supported flags: --full, --verify (each at most once)
+                let mut opt_full = false;
+                let mut opt_verify = false;
+
+                for tok in it {
+                    if tok.contains('\t') || tok.contains('\n') {
+                        return Err(anyhow!("Invalid character in option: tabs/newlines are not allowed"));
+                    }
+                    match tok {
+                        "--full" => {
+                            if opt_full {
+                                return Err(anyhow!("Duplicate option: --full"));
+                            }
+                            opt_full = true;
+                        }
+                        "--verify" => {
+                            if opt_verify {
+                                return Err(anyhow!("Duplicate option: --verify"));
+                            }
+                            opt_verify = true;
+                        }
+                        _ => {
+                            // Unknown flag → hard error to surface typos early
+                            return Err(anyhow!(format!("Unknown option: {}", tok)));
+                        }
+                    }
+                }
+
+                // Map to your command enum. Adjust the variant name/shape to your codebase.
+                // Example:
+                //   Command::Sync { host, port, options: SyncOptions { full: opt_full, verify: opt_verify } }
+                Ok(Command::Sync {
+                    host,
+                    port,
+                    options: SyncOptions {
+                        full: opt_full,
+                        verify: opt_verify,
+                    },
+                })
+            }
+            "HASH" => {
+                if rest.contains(' ') {
+                    return Err(anyhow!("HASH command accepts only one argument"));
+                }
+                // Check for invalid characters in key
+                if rest.contains('\t') {
+                    return Err(anyhow!("Invalid character: tab character not allowed in key"));
+                }
+                if rest.contains('\n') {
+                    return Err(anyhow!("Invalid character: newline character not allowed in key"));
+                }
+                Ok(Command::Hash {
+                    pattern: Some(rest.to_string()),
+                })
+            }
             "MEMORY" => {
                 if !rest.is_empty() {
                     return Err(anyhow!("MEMORY command does not accept any arguments"));
@@ -401,9 +518,6 @@ impl Protocol {
                 }
             }
             "SCAN" => {
-                if rest.is_empty() {
-                    return Err(anyhow!("SCAN command requires a prefix"));
-                }
                 if rest.contains(' ') {
                     return Err(anyhow!("SCAN command accepts only one argument"));
                 }
