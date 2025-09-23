@@ -22,6 +22,8 @@ class TestScanOverTcp:
         keys = connected_client.scan("nosuch")
         assert keys == []
 
+
+
     def test_scan_is_one_argument(self, connected_client: MerkleKVClient):
 
         # Extra argument -> error
