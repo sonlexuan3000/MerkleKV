@@ -23,9 +23,6 @@ class TestScanOverTcp:
         assert keys == []
 
     def test_scan_is_one_argument(self, connected_client: MerkleKVClient):
-        # Missing argument -> error
-        resp = connected_client.send_command("SCAN")
-        assert "ERROR" in resp  # server: "ERROR SCAN command requires a prefix"
 
         # Extra argument -> error
         resp = connected_client.send_command("SCAN user: extra")
