@@ -11,7 +11,3 @@ mqtt_port = 1883
 topic_prefix = "merkle_kv"
 client_id = "node1"
 
-[anti_entropy]
-enabled = true
-interval_seconds = 180
-peer_list = ["192.168.1.10:7379", "192.168.1.12:7379"]

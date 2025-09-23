@@ -30,12 +30,15 @@ use std::path::Path;
 /// Configuration for anti-entropy synchronization.
 /// Anti-entropy helps ensure eventual consistency between nodes by periodically
 /// reconciling differences in their data sets.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AntiEntropyConfig {
     pub enabled: bool,
     pub interval_seconds: u64,
     #[serde(default)]
-    pub peer_list: Vec<String>, // List of peer nodes (host:port)
+    pub peer_list: Vec<String>,
+}
+fn ae_is_disabled(ae: &AntiEntropyConfig) -> bool {
+    !ae.enabled && ae.peer_list.is_empty()
 }
 /// Main configuration structure for the MerkleKV server.
 ///
@@ -66,6 +69,7 @@ pub struct Config {
     /// TODO: Implement the actual synchronization logic
     pub sync_interval_seconds: u64,
     /// Configuration for anti-entropy synchronization
+    #[serde(default, skip_serializing_if = "ae_is_disabled")]
     pub anti_entropy: AntiEntropyConfig,
 }
 
