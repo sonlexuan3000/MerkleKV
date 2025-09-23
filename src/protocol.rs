@@ -60,7 +60,17 @@ pub struct SyncOptions {
     pub verify: bool,
 }
 #[derive(Debug, Clone, PartialEq)]
+pub enum ReplicateAction {
+    Enable,
+    Disable,
+    Status,
+}
+#[derive(Debug, Clone, PartialEq)]
 pub enum Command {
+    /// Control replication settings
+    Replicate {
+        action: ReplicateAction,
+    },
     /// Retrieve a value by its key
     Get {
         /// The key to look up
@@ -246,7 +256,7 @@ impl Protocol {
             }
             
             match input.to_uppercase().as_str() {
-                "GET" | "SET" | "DELETE" | "DEL" | "ECHO" | "EXISTS" | "SYNC" => {
+                "GET" | "SET" | "DELETE" | "DEL" | "ECHO" | "EXISTS" | "SYNC" | "REPLICATE" => {
                     return Err(anyhow!("{} command requires arguments", input.to_uppercase()));
                 }
                 "TRUNCATE" => return Ok(Command::Truncate),
@@ -502,6 +512,19 @@ impl Protocol {
                 Ok(Command::Hash {
                     pattern: Some(rest.to_string()),
                 })
+            }
+            "REPLICATE" => {
+                let arg = rest.trim();
+                if arg.is_empty() {
+                    return Err(anyhow::anyhow!("REPLICATE requires one of: enable|disable|status"));
+                }
+                let action = match arg.to_ascii_lowercase().as_str() {
+                    "enable"  => ReplicateAction::Enable,
+                    "disable" => ReplicateAction::Disable,
+                    "status"  => ReplicateAction::Status,
+                    _ => return Err(anyhow::anyhow!("Unknown REPLICATE action: {}", arg)),
+                };
+                Ok(Command::Replicate { action })
             }
             "MEMORY" => {
                 if !rest.is_empty() {

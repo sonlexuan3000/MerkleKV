@@ -27,6 +27,16 @@ use config::{Config as ConfigLib, File};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Configuration for anti-entropy synchronization.
+/// Anti-entropy helps ensure eventual consistency between nodes by periodically
+/// reconciling differences in their data sets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AntiEntropyConfig {
+    pub enabled: bool,
+    pub interval_seconds: u64,
+    #[serde(default)]
+    pub peer_list: Vec<String>, // List of peer nodes (host:port)
+}
 /// Main configuration structure for the MerkleKV server.
 ///
 /// Contains all settings needed to run a node, including network configuration,
@@ -55,6 +65,8 @@ pub struct Config {
     /// How often (in seconds) to run anti-entropy synchronization with peers
     /// TODO: Implement the actual synchronization logic
     pub sync_interval_seconds: u64,
+    /// Configuration for anti-entropy synchronization
+    pub anti_entropy: AntiEntropyConfig,
 }
 
 /// Configuration for MQTT-based replication.
@@ -86,6 +98,10 @@ pub struct ReplicationConfig {
     /// while preserving the ability to override it securely through environment variables.
     #[serde(default)]
     pub client_password: Option<String>,
+
+    /// List of peer nodes (host:port) for replication
+    #[serde(default)]
+    pub peer_list: Vec<String>,
 }
 
 impl Config {
@@ -108,7 +124,10 @@ impl Config {
         let config: Config = settings.try_deserialize()?;
         Ok(config)
     }
-
+    /// Get the number of peers configured for anti-entropy synchronization.
+    pub fn peer_list_len(&self) -> usize {
+        self.anti_entropy.peer_list.len()
+    }
     /// Create a configuration with sensible default values.
     ///
     /// These defaults are suitable for development and testing:
@@ -133,8 +152,14 @@ impl Config {
                 topic_prefix: "merkle_kv".to_string(),
                 client_id: "node1".to_string(),
                 client_password: None,
+                peer_list: vec![], 
             },
             sync_interval_seconds: 60,
+            anti_entropy: AntiEntropyConfig {
+                enabled: true,          
+                interval_seconds: 60,
+                peer_list: vec![],
+            },
         }
     }
 }

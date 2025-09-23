@@ -28,7 +28,7 @@
 //! the same underlying storage.
 use hex; 
 use crate::sync::SyncManager;
-use crate::protocol::SyncOptions;     // the options parsed by SYNC (full/verify)
+use crate::protocol::{SyncOptions, ReplicateAction};     // the options parsed by SYNC (full/verify)
 use crate::store::KVEngineStoreTrait;
 use anyhow::Result;
 use log::{error, info};
@@ -115,6 +115,9 @@ pub struct ServerStats {
 
     /// number of hash commands processed
     pub hash_commands: AtomicU64,
+
+    /// number of replication actions performed
+    pub replicate_commands: AtomicU64,
 }
 
 struct ClientMeta {
@@ -148,6 +151,7 @@ impl Clone for ServerStats {
             bulk_commands: AtomicU64::new(self.bulk_commands.load(Ordering::Relaxed)),
             stat_commands: AtomicU64::new(self.stat_commands.load(Ordering::Relaxed)),
             sync_commands: AtomicU64::new(self.sync_commands.load(Ordering::Relaxed)),
+            replicate_commands: AtomicU64::new(self.replicate_commands.load(Ordering::Relaxed)),
             management_commands: AtomicU64::new(self.management_commands.load(Ordering::Relaxed)),
             start_time: self.start_time,
         }
@@ -187,6 +191,7 @@ impl ServerStats {
             management_commands: AtomicU64::new(0),
             start_time: Instant::now(),
             sync_commands: AtomicU64::new(0),
+            replicate_commands: AtomicU64::new(0),
         }
     }
     
@@ -262,6 +267,9 @@ impl ServerStats {
             Command::Hash {..} => {
                 self.hash_commands.fetch_add(1, Ordering::Relaxed);
             }
+            Command::Replicate {..} => {
+                self.replicate_commands.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
     
@@ -291,6 +299,7 @@ impl ServerStats {
         result.push_str(&format!("stat_commands:{}\r\n", self.stat_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("sync_commands:{}\r\n", self.sync_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("hash_commands:{}\r\n", self.hash_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("replicate_commands:{}\r\n", self.replicate_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("management_commands:{}\r\n", self.management_commands.load(Ordering::Relaxed)));
         
         // Add memory usage estimate (this is a very rough estimate)
@@ -365,6 +374,7 @@ impl Server {
     /// server.run().await?; // Runs forever
     /// ```
     pub async fn run(self) -> Result<()> {
+        let cfg = Arc::new(self.config.clone());
         let clients: ClientTable = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let client_id_gen = Arc::new(AtomicU64::new(0));
 
@@ -382,13 +392,15 @@ impl Server {
         // Share server statistics across all connections
         let stats = Arc::new(self.stats.clone());
 
-        // Initialize replication if enabled
-        let replicator_opt: Option<Replicator> = if self.config.replication.enabled {
+        let replicator: Arc<Mutex<Option<Replicator>>> = Arc::new(Mutex::new(None));
+
+        // enable on start if config says so
+        if self.config.replication.enabled {
             let r = Replicator::new(&self.config).await?;
-            // Start background apply loop
+            // background apply loop
             r.start_replication_handler(Arc::clone(&store)).await;
-            Some(r)
-        } else { None };
+            *replicator.lock().await = Some(r);
+        }
 
         // TODO: Add graceful shutdown handling
         // TODO: Add connection limits and rate limiting
@@ -407,7 +419,7 @@ impl Server {
                     stats_clone.active_connections.fetch_add(1, Ordering::Relaxed);
 
                     // Spawn a new task for each client connection
-                    let repl_clone = replicator_opt.clone();
+                    let repl_clone = Arc::clone(&replicator);
                     let sync_manager_clone = Arc::clone(&sync_manager);
                     let id = client_id_gen.fetch_add(1, Ordering::Relaxed) + 1;
                     let now_unix = SystemTime::now()
@@ -426,8 +438,9 @@ impl Server {
                     }
                     let clients_clone = Arc::clone(&clients);
                     let meta_clone = Arc::clone(&meta);
+                    let cfg_cl = Arc::clone(&cfg);
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone, meta_clone, clients_clone.clone(), sync_manager_clone).await {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone, meta_clone, clients_clone.clone(), sync_manager_clone, cfg_cl).await {
                             error!("Error handling connection from {}: {}", addr, e);
                         }
                         
@@ -472,10 +485,11 @@ impl Server {
         addr: SocketAddr,
         store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
         stats: Arc<ServerStats>,
-        replicator: Option<Replicator>,
+        replicator: Arc<Mutex<Option<Replicator>>>,
         client_meta: Arc<ClientMeta>,
         clients: ClientTable,
         sync_manager: Arc<tokio::sync::Mutex<SyncManager>>,
+        cfg: Arc<crate::config::Config>,
     ) -> Result<()> {
         let (read_half, mut write_half) = socket.into_split();
         let mut reader = BufReader::new(read_half);
@@ -669,7 +683,41 @@ impl Server {
 
                             out
                         }
-
+                        Command::Replicate { action } => {
+                            match action {
+                                ReplicateAction::Enable => {
+                                    let mut g = replicator.lock().await;
+                                    if g.is_some() {
+                                        "OK\r\n".to_string() // đã bật rồi
+                                    } else {
+                                        // Khởi động replicator mới
+                                        match Replicator::new(cfg.as_ref()).await {
+                                            Ok(r) => {
+                                                r.start_replication_handler(Arc::clone(&store)).await;
+                                                *g = Some(r);
+                                                "OK\r\n".to_string()
+                                            }
+                                            Err(e) => format!("ERROR {}\r\n", e),
+                                        }
+                                    }
+                                }
+                                ReplicateAction::Disable => {
+                                    let mut g = replicator.lock().await;
+                                    *g = None; // drop => tắt replication
+                                    "OK\r\n".to_string()
+                                }
+                                ReplicateAction::Status => {
+                                    let g = replicator.lock().await;
+                                    if g.is_some() {
+                                        // Nếu bạn có danh sách peer trong config:
+                                        let n = cfg.replication.peer_list.len();
+                                        format!("REPLICATION enabled {} nodes\r\n", n)
+                                    } else {
+                                        "REPLICATION disabled\r\n".to_string()
+                                    }
+                                }
+                            }
+                        }
                         Command::Increment { key, amount } => {
                             // Check if the key already exists
                             let exists = { let store = store.lock().await; store.get(&key).is_some() };
@@ -875,15 +923,16 @@ impl Server {
                         }
                     };
                     // Perform publishes after the store operations (lock released)
-                    if let Some(r) = &replicator {
+                    let guard = replicator.lock().await;
+                    if let Some(r) = guard.as_ref() {
                         for p in publishes {
                             match p {
-                                Publish::Set(k, v) => { let _ = r.publish_set(&k, &v).await; }
-                                Publish::Delete(k) => { let _ = r.publish_delete(&k).await; }
-                                Publish::Incr(k, nv) => { let _ = r.publish_incr(&k, nv).await; }
-                                Publish::Decr(k, nv) => { let _ = r.publish_decr(&k, nv).await; }
-                                Publish::Append(k, nv) => { let _ = r.publish_append(&k, &nv).await; }
-                                Publish::Prepend(k, nv) => { let _ = r.publish_prepend(&k, &nv).await; }
+                                Publish::Set(k, v)      => { let _ = r.publish_set(&k, &v).await; }
+                                Publish::Delete(k)       => { let _ = r.publish_delete(&k).await; }
+                                Publish::Incr(k, nv)     => { let _ = r.publish_incr(&k, nv).await; }
+                                Publish::Decr(k, nv)     => { let _ = r.publish_decr(&k, nv).await; }
+                                Publish::Append(k, nv)   => { let _ = r.publish_append(&k, &nv).await; }
+                                Publish::Prepend(k, nv)  => { let _ = r.publish_prepend(&k, &nv).await; }
                             }
                         }
                     }
