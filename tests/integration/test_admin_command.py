@@ -177,7 +177,7 @@ def main():
     n = int(resp.split()[1])
     assert n >= 2, f"DBSIZE expected >=2, got {n}"
 
-    # 5) EXISTS (1-key cho chắc chắn tương thích parser)
+    # 5) EXISTS (1-key for parser compatibility assurance)
     rx = send_cmd(s, "EXISTS a")
     assert rx.startswith("EXISTS "), f"EXISTS bad: {rx!r}"
     assert int(rx.split()[1]) in (0, 1), f"EXISTS value bad: {rx!r}"
