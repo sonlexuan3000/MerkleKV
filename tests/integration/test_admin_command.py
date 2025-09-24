@@ -46,7 +46,7 @@ def open_conn(host, port):
 def test_hash(main_host, main_port):
     s = open_conn(main_host, main_port)
     try:
-        # Seed vài key
+        # Seed some keys
         assert send_cmd(s, "SET user:1 Alice") == "OK"
         assert send_cmd(s, "SET user:2 Bob") == "OK"
         assert send_cmd(s, "SET misc:color blue") == "OK"
