@@ -26,7 +26,9 @@
 //! The storage engine is wrapped in `Arc<Mutex<>>` to allow safe concurrent access
 //! from multiple client connections. Each connection gets its own task but shares
 //! the same underlying storage.
-
+use hex; 
+use crate::sync::SyncManager;
+use crate::protocol::{SyncOptions, ReplicateAction};     // the options parsed by SYNC (full/verify)
 use crate::store::KVEngineStoreTrait;
 use anyhow::Result;
 use log::{error, info};
@@ -107,6 +109,15 @@ pub struct ServerStats {
     
     /// Server start time
     pub start_time: Instant,
+
+    /// Number of SYNC commands processed
+    pub sync_commands: AtomicU64,
+
+    /// Number of hash commands processed
+    pub hash_commands: AtomicU64,
+
+    /// number of replication actions performed
+    pub replicate_commands: AtomicU64,
 }
 
 struct ClientMeta {
@@ -124,6 +135,7 @@ impl Clone for ServerStats {
             active_connections: AtomicU64::new(self.active_connections.load(Ordering::Relaxed)),
             total_commands: AtomicU64::new(self.total_commands.load(Ordering::Relaxed)),
             get_commands: AtomicU64::new(self.get_commands.load(Ordering::Relaxed)),
+            hash_commands: AtomicU64::new(self.hash_commands.load(Ordering::Relaxed)),
             scan_commands: AtomicU64::new(self.scan_commands.load(Ordering::Relaxed)),
             ping_commands: AtomicU64::new(self.ping_commands.load(Ordering::Relaxed)),
             echo_commands: AtomicU64::new(self.echo_commands.load(Ordering::Relaxed)),
@@ -138,6 +150,8 @@ impl Clone for ServerStats {
             string_commands: AtomicU64::new(self.string_commands.load(Ordering::Relaxed)),
             bulk_commands: AtomicU64::new(self.bulk_commands.load(Ordering::Relaxed)),
             stat_commands: AtomicU64::new(self.stat_commands.load(Ordering::Relaxed)),
+            sync_commands: AtomicU64::new(self.sync_commands.load(Ordering::Relaxed)),
+            replicate_commands: AtomicU64::new(self.replicate_commands.load(Ordering::Relaxed)),
             management_commands: AtomicU64::new(self.management_commands.load(Ordering::Relaxed)),
             start_time: self.start_time,
         }
@@ -160,6 +174,7 @@ impl ServerStats {
             total_commands: AtomicU64::new(0),
             get_commands: AtomicU64::new(0),
             scan_commands: AtomicU64::new(0),
+            hash_commands: AtomicU64::new(0),
             echo_commands: AtomicU64::new(0),
             ping_commands: AtomicU64::new(0),
             exists_commands: AtomicU64::new(0),
@@ -175,6 +190,8 @@ impl ServerStats {
             stat_commands: AtomicU64::new(0),
             management_commands: AtomicU64::new(0),
             start_time: Instant::now(),
+            sync_commands: AtomicU64::new(0),
+            replicate_commands: AtomicU64::new(0),
         }
     }
     
@@ -244,6 +261,15 @@ impl ServerStats {
             Command::Clientlist => {
                 self.management_commands.fetch_add(1, Ordering::Relaxed);
             }
+            Command::Sync {..} => {
+                self.sync_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Hash {..} => {
+                self.hash_commands.fetch_add(1, Ordering::Relaxed);
+            }
+            Command::Replicate {..} => {
+                self.replicate_commands.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
     
@@ -271,6 +297,9 @@ impl ServerStats {
         result.push_str(&format!("string_commands:{}\r\n", self.string_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("bulk_commands:{}\r\n", self.bulk_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("stat_commands:{}\r\n", self.stat_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("sync_commands:{}\r\n", self.sync_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("hash_commands:{}\r\n", self.hash_commands.load(Ordering::Relaxed)));
+        result.push_str(&format!("replicate_commands:{}\r\n", self.replicate_commands.load(Ordering::Relaxed)));
         result.push_str(&format!("management_commands:{}\r\n", self.management_commands.load(Ordering::Relaxed)));
         
         // Add memory usage estimate (this is a very rough estimate)
@@ -345,6 +374,7 @@ impl Server {
     /// server.run().await?; // Runs forever
     /// ```
     pub async fn run(self) -> Result<()> {
+        let cfg = Arc::new(self.config.clone());
         let clients: ClientTable = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let client_id_gen = Arc::new(AtomicU64::new(0));
 
@@ -355,16 +385,22 @@ impl Server {
         // Wrap the storage in `Arc<Mutex<>>` for safe concurrent access
         let store = Arc::new(Mutex::new(self.store));
         
+        let sync_manager = Arc::new(tokio::sync::Mutex::new(
+            SyncManager::new_with_shared_store(&self.config, Arc::clone(&store))
+        ));
+
         // Share server statistics across all connections
         let stats = Arc::new(self.stats.clone());
 
-        // Initialize replication if enabled
-        let replicator_opt: Option<Replicator> = if self.config.replication.enabled {
+        let replicator: Arc<Mutex<Option<Replicator>>> = Arc::new(Mutex::new(None));
+
+        // enable on start if config says so
+        if self.config.replication.enabled {
             let r = Replicator::new(&self.config).await?;
-            // Start background apply loop
+            // background apply loop
             r.start_replication_handler(Arc::clone(&store)).await;
-            Some(r)
-        } else { None };
+            *replicator.lock().await = Some(r);
+        }
 
         // TODO: Add graceful shutdown handling
         // TODO: Add connection limits and rate limiting
@@ -381,10 +417,10 @@ impl Server {
                     // Update connection statistics
                     stats_clone.total_connections.fetch_add(1, Ordering::Relaxed);
                     stats_clone.active_connections.fetch_add(1, Ordering::Relaxed);
-                    
-                    // Spawn a new task for each client connection
-                    let repl_clone = replicator_opt.clone();
 
+                    // Spawn a new task for each client connection
+                    let repl_clone = Arc::clone(&replicator);
+                    let sync_manager_clone = Arc::clone(&sync_manager);
                     let id = client_id_gen.fetch_add(1, Ordering::Relaxed) + 1;
                     let now_unix = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -402,8 +438,9 @@ impl Server {
                     }
                     let clients_clone = Arc::clone(&clients);
                     let meta_clone = Arc::clone(&meta);
+                    let cfg_cl = Arc::clone(&cfg);
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone, meta_clone, clients_clone.clone()).await {
+                        if let Err(e) = Self::handle_connection(socket, addr, store_clone, stats_clone.clone(), repl_clone, meta_clone, clients_clone.clone(), sync_manager_clone, cfg_cl).await {
                             error!("Error handling connection from {}: {}", addr, e);
                         }
                         
@@ -448,9 +485,11 @@ impl Server {
         addr: SocketAddr,
         store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
         stats: Arc<ServerStats>,
-        replicator: Option<Replicator>,
+        replicator: Arc<Mutex<Option<Replicator>>>,
         client_meta: Arc<ClientMeta>,
         clients: ClientTable,
+        sync_manager: Arc<tokio::sync::Mutex<SyncManager>>,
+        cfg: Arc<crate::config::Config>,
     ) -> Result<()> {
         let (read_half, mut write_half) = socket.into_split();
         let mut reader = BufReader::new(read_half);
@@ -597,6 +636,87 @@ impl Server {
                             }
                             out.push_str("END\r\n");
                             out
+                        }
+                        Command::Sync { host, port, options: _ } => {
+                            let mut mgr = sync_manager.lock().await;
+                            match mgr.sync_once(&host, port).await {
+                                Ok(_)  => "OK\r\n".to_string(),
+                                Err(e) => format!("ERROR {}\r\n", e),
+                            }
+                        }
+                        Command::Hash { pattern } => {
+                            // 1) Collect keys (all or prefix)
+                            let (keys, pat_string) = {
+                                let store = store.lock().await;
+                                // convention: empty prefix returns ALL keys (you already added this for SCAN)
+                                let ks = match &pattern {
+                                    None => store.scan(""),
+                                    Some(p) if p == "*" => store.scan(""),           // treat '*' as "all"
+                                    Some(p)            => store.scan(p),             // simple prefix
+                                };
+                                (ks, pattern.unwrap_or_default())
+                            };
+
+                            // 2) Build a Merkle tree over selected keys
+                            let mut tree = crate::store::merkle::MerkleTree::new();
+                            {
+                                let store = store.lock().await;
+                                for k in keys {
+                                    if let Some(v) = store.get(&k) {
+                                        tree.insert(&k, &v); // your Merkle uses deterministic key ordering internally
+                                    }
+                                }
+                            }
+
+                            // 3) Compute root → hex (define empty = 64 zeros for determinism)
+                            let hex_root = match tree.get_root_hash() {
+                                Some(h) => hex::encode(h),
+                                None    => "0".repeat(64), // SHA-256 length; empty set sentinel
+                            };
+
+                            // 4) Format response
+                            let out = if pat_string.is_empty() {
+                                format!("HASH {}\r\n", hex_root)
+                            } else {
+                                format!("HASH {} {}\r\n", pat_string, hex_root)
+                            };
+
+                            out
+                        }
+                        Command::Replicate { action } => {
+                            match action {
+                                ReplicateAction::Enable => {
+                                    let mut g = replicator.lock().await;
+                                    if g.is_some() {
+                                        "OK\r\n".to_string() // đã bật rồi
+                                    } else {
+                                        // Khởi động replicator mới
+                                        match Replicator::new(cfg.as_ref()).await {
+                                            Ok(r) => {
+                                                r.start_replication_handler(Arc::clone(&store)).await;
+                                                *g = Some(r);
+                                                "OK\r\n".to_string()
+                                            }
+                                            Err(e) => format!("ERROR {}\r\n", e),
+                                        }
+                                    }
+                                }
+                                ReplicateAction::Disable => {
+                                    let mut g = replicator.lock().await;
+                                    *g = None; // drop => tắt replication
+                                    "OK\r\n".to_string()
+                                }
+                                ReplicateAction::Status => {
+                                    let g = replicator.lock().await;
+                                    if g.is_some() {
+                                        // Nếu bạn có danh sách peer trong config:
+                                        let n = cfg.replication.peer_list.len();
+                                        format!("REPLICATION enabled {} nodes\r\n", n)
+                                    } else {
+                                        "REPLICATION disabled\r\n".to_string()
+                                    }
+                                }
+                            }
                         }
                         Command::Increment { key, amount } => {
                             // Check if the key already exists
@@ -803,15 +923,16 @@ impl Server {
                         }
                     };
                     // Perform publishes after the store operations (lock released)
-                    if let Some(r) = &replicator {
+                    let guard = replicator.lock().await;
+                    if let Some(r) = guard.as_ref() {
                         for p in publishes {
                             match p {
-                                Publish::Set(k, v) => { let _ = r.publish_set(&k, &v).await; }
-                                Publish::Delete(k) => { let _ = r.publish_delete(&k).await; }
-                                Publish::Incr(k, nv) => { let _ = r.publish_incr(&k, nv).await; }
-                                Publish::Decr(k, nv) => { let _ = r.publish_decr(&k, nv).await; }
-                                Publish::Append(k, nv) => { let _ = r.publish_append(&k, &nv).await; }
-                                Publish::Prepend(k, nv) => { let _ = r.publish_prepend(&k, &nv).await; }
+                                Publish::Set(k, v)      => { let _ = r.publish_set(&k, &v).await; }
+                                Publish::Delete(k)       => { let _ = r.publish_delete(&k).await; }
+                                Publish::Incr(k, nv)     => { let _ = r.publish_incr(&k, nv).await; }
+                                Publish::Decr(k, nv)     => { let _ = r.publish_decr(&k, nv).await; }
+                                Publish::Append(k, nv)   => { let _ = r.publish_append(&k, &nv).await; }
+                                Publish::Prepend(k, nv)  => { let _ = r.publish_prepend(&k, &nv).await; }
                             }
                         }
                     }

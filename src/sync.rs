@@ -1,245 +1,215 @@
-//! # Synchronization Manager
+//! sync.rs — Minimal, easy-to-read Merkle-based one-way sync (local ← remote)
+//
+//! What this does (high-level):
+//! 1) Build a Merkle snapshot from the *local* store (via scan("") + get()).
+//! 2) Build a Merkle snapshot from the *remote* peer (via SCAN + GET).
+//! 3) Compare the two trees with `diff_keys()` to find differing keys.
+//! 4) Apply changes so that local == remote (set/update or delete).
 //!
-//! This module implements the synchronization logic for distributed MerkleKV nodes.
-//! It uses an anti-entropy protocol based on Merkle tree comparison to ensure
-//! eventual consistency across the cluster.
+//! Notes:
+//! - This is intentionally simple (no prefix fanout).
+//! - Wire format matches your server.rs today:
+//!     SCAN <prefix>   →  "KEYS <n>\r\n<k1>\r\n...<kn>\r\n"
+//!     GET <key>       →  "VALUE <plain>\r\n"   or "NOT_FOUND\r\n"
+//! - MerkleTree expects &str values, so we assume UTF-8 strings.
 //!
-//! ## Anti-Entropy Protocol
-//!
-//! Anti-entropy is a technique used in distributed systems to repair inconsistencies:
-//! 1. **Periodic Sync**: Nodes periodically contact their peers
-//! 2. **Root Hash Comparison**: Compare Merkle tree root hashes
-//! 3. **Recursive Diff**: If different, recursively compare subtrees
-//! 4. **Delta Transfer**: Only transfer the differing key-value pairs
-//!
-//! ## Current Implementation Status
-//!
-//! **⚠️ This is a STUB implementation!**
-//!
-//! The current code provides the basic structure but does not implement
-//! the actual synchronization logic. Key missing pieces:
-//! - Peer discovery mechanism
-//! - Network communication with peers
-//! - Merkle tree comparison algorithm
-//! - Delta computation and transfer
-//!
-//! See the TODO comments throughout for specific implementation areas.
+//! How the SYNC command handler should call this:
+//!     let mut mgr = sync_manager.lock().await;
+//!     match mgr.sync_once(&host, port).await { Ok(_) => "OK", Err(e) => ... };
 
-use anyhow::Result;
-use log::{info, warn};
+use anyhow::{anyhow, Context, Result};
+use log::{debug, info};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::time;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::TcpStream,
+    sync::Mutex,
+    time,
+};
 
 use crate::config::Config;
 use crate::store::merkle::MerkleTree;
 use crate::store::KVEngineStoreTrait;
 
-/// Manages synchronization with peer nodes in the cluster.
-///
-/// The SyncManager periodically contacts peer nodes to exchange Merkle tree
-/// information and synchronize any differences in their datasets.
 pub struct SyncManager {
-    /// Local storage engine containing the key-value data
-    store: Box<dyn KVEngineStoreTrait + Send + Sync>,
-
-    /// Merkle tree representing the current state of the local dataset
-    merkle_tree: MerkleTree,
-
-    /// List of peer node addresses to synchronize with
-    /// TODO: Implement peer discovery instead of static configuration
-    peer_nodes: Vec<String>,
-
-    /// How often to run the synchronization process
+    /// Shared storage used by all connections and the sync process
+    store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
+    /// Optional background interval
     sync_interval: Duration,
 }
 
 impl SyncManager {
-    /// Create a new synchronization manager.
-    ///
-    /// # Arguments
-    /// * `config` - Server configuration containing sync settings
-    /// * `store` - Local storage engine to keep synchronized
-    ///
-    /// # Returns
-    /// * `SyncManager` - New sync manager instance
-    ///
-    /// # Current Behavior
-    /// The peer list is currently empty regardless of configuration.
-    /// In a real implementation, this would load peer addresses from
-    /// configuration or implement a peer discovery mechanism.
-    pub fn new(config: &Config, store: Box<dyn KVEngineStoreTrait + Send + Sync>) -> Self {
-        let peers = if config.replication.enabled {
-            // TODO: Implement peer discovery or load from configuration
-            // For example:
-            // - Static list in config file
-            // - Service discovery (Consul, etcd, etc.)
-            // - DNS-based discovery
-            // - Gossip protocol for dynamic discovery
-            vec![]
-        } else {
-            vec![]
-        };
-
+    /// Construct a SyncManager that uses the *same* shared store as the server.
+    pub fn new_with_shared_store(
+        cfg: &Config,
+        store: Arc<Mutex<Box<dyn KVEngineStoreTrait + Send + Sync>>>,
+    ) -> Self {
         Self {
             store,
-            merkle_tree: MerkleTree::new(),
-            peer_nodes: peers,
-            sync_interval: Duration::from_secs(config.sync_interval_seconds),
+            sync_interval: Duration::from_secs(cfg.sync_interval_seconds),
         }
     }
 
-    /// Start the periodic synchronization loop.
-    ///
-    /// This method runs indefinitely, performing synchronization with all
-    /// known peers at regular intervals. It should be run in a background task.
-    ///
-    /// # Current Behavior
-    /// Since the peer list is empty, this loop effectively does nothing except
-    /// wait for the sync interval. When peers are added, it will attempt to
-    /// synchronize with each one.
-    ///
-    /// # Example
-    /// ```rust
-    /// let mut sync_manager = SyncManager::new(&config, store);
-    /// tokio::spawn(async move {
-    ///     sync_manager.start_sync_loop().await;
-    /// });
-    /// ```
-    pub async fn start_sync_loop(&mut self) {
-        let mut interval = time::interval(self.sync_interval);
+    /// One-shot sync: make local data equal to remote data.
+    pub async fn sync_once(&mut self, host: &str, port: u16) -> Result<()> {
+        let addr = format!("{host}:{port}");
+        info!("SYNC (Merkle diff) → {}", addr);
 
-        loop {
-            interval.tick().await;
+        // 1) Local snapshot
+        let (local_tree, _local_map) = self.build_local_merkle_snapshot().await;
 
-            if self.peer_nodes.is_empty() {
-                // No peers configured, skip this sync round
-                continue;
-            }
+        // 2) Remote snapshot
+        let (remote_tree, remote_map) = self.build_remote_merkle_snapshot(&addr).await?;
 
-            // Synchronize with each known peer
-            for peer in &self.peer_nodes {
-                match self.sync_with_peer(peer).await {
-                    Ok(_) => {
-                        info!("Successfully synchronized with peer: {}", peer);
-                    }
-                    Err(e) => {
-                        warn!("Failed to synchronize with peer {}: {}", peer, e);
-                    }
-                }
+        // 3) Diff
+        let diffs = local_tree.diff_keys(&remote_tree);
+        if diffs.is_empty() {
+            info!("SYNC: already identical (no diff)");
+            return Ok(());
+        }
+
+        // 4) Apply changes: local := remote
+        let mut guard = self.store.lock().await;
+        for k in diffs {
+            if let Some(rv) = remote_map.get(&k) {
+                // set / overwrite
+                let _ = guard.set(k.clone(), rv.clone());
+            } else {
+                // missing remotely → delete local
+                let _ = guard.delete(&k);
             }
         }
-    }
 
-    /// Synchronize with a single peer node.
-    ///
-    /// This method implements the core anti-entropy algorithm by comparing
-    /// Merkle trees with a peer and exchanging any differences.
-    ///
-    /// # Arguments
-    /// * `_peer` - Address of the peer node to sync with
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success if sync completed, error if communication failed
-    ///
-    /// # Algorithm (when implemented)
-    /// 1. Connect to the peer node
-    /// 2. Exchange root hashes of Merkle trees
-    /// 3. If hashes match, no sync needed
-    /// 4. If different, recursively compare subtrees to find differences
-    /// 5. Request missing/different key-value pairs from peer
-    /// 6. Update local storage with received data
-    /// 7. Optionally send our missing data to the peer (bidirectional sync)
-    ///
-    /// # Current Status
-    /// **STUB IMPLEMENTATION** - This method currently does nothing except log.
-    /// A real implementation would need:
-    /// - Network protocol for communicating with peers
-    /// - Merkle tree comparison algorithm
-    /// - Data transfer mechanism
-    /// - Conflict resolution strategy
-    async fn sync_with_peer(&self, _peer: &str) -> Result<()> {
-        // TODO: Implement actual anti-entropy sync protocol
-        //
-        // Steps for implementation:
-        // 1. Establish connection to peer (HTTP, gRPC, custom TCP, etc.)
-        // 2. Exchange Merkle tree root hashes
-        // 3. If different, exchange sub-tree hashes recursively to identify differences
-        // 4. Request only the different keys/values from the peer
-        // 5. Update local store with received data
-        // 6. Optionally update our Merkle tree if changes were made
-        //
-        // Example network calls:
-        // let peer_root_hash = http_client.get_root_hash(peer).await?;
-        // if peer_root_hash != self.merkle_tree.get_root_hash() {
-        //     let differences = compare_trees(peer, &self.merkle_tree).await?;
-        //     let updates = http_client.get_keys(peer, &differences).await?;
-        //     for (key, value) in updates {
-        //         self.store.set(key, value);
-        //     }
-        // }
-
-        info!(
-            "Anti-entropy sync process would happen here with peer: {}",
-            _peer
-        );
-
+        info!("SYNC: done (local now matches remote)");
         Ok(())
     }
 
-    /// Update the local Merkle tree to reflect current storage state.
-    ///
-    /// This method rebuilds the Merkle tree from the current contents of
-    /// the storage engine. It should be called after any changes to the
-    /// local data that weren't made through the sync process.
-    ///
-    /// # Performance Note
-    /// This implementation rebuilds the entire tree, which is O(n log n).
-    /// A production version should use incremental updates for efficiency.
-    ///
-    /// # When to Call
-    /// - After processing client write operations (SET, DELETE)
-    /// - After receiving replication updates
-    /// - Before starting a sync operation to ensure tree is current
-    pub fn update_merkle_tree(&mut self) {
-        // Rebuild the Merkle tree with current data
-        // TODO: Make this incremental for better performance
-        // Instead of rebuilding everything, track which keys changed
-        // and only update the affected parts of the tree
-        self.merkle_tree = MerkleTree::new();
-
-        // Add all current key-value pairs to the tree
-        // Note: This is a simplification - in reality we would need
-        // consistent serialization of values to ensure deterministic hashes
-        for key in self.store.keys() {
-            if let Some(value) = self.store.get(&key) {
-                self.merkle_tree.insert(&key, &value);
+    /// Optional background loop (best-effort).
+    pub async fn start_sync_loop(&mut self, host: String, port: u16) {
+        let mut interval = time::interval(self.sync_interval);
+        let addr = format!("{host}:{port}");
+        loop {
+            interval.tick().await;
+            if let Err(e) = self.sync_once(host.as_str(), port).await {
+                log::warn!("background sync with {} failed: {}", addr, e);
             }
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    // TODO: Implement comprehensive tests for sync logic
-    // When the actual implementation is added, tests should cover:
-    //
-    // 1. Sync with identical datasets (should be no-op)
-    // 2. Sync with completely different datasets
-    // 3. Sync with partially overlapping datasets
-    // 4. Handling of network failures during sync
-    // 5. Concurrent sync operations
-    // 6. Merkle tree update after local changes
-    //
-    // Example test structure:
-    // #[tokio::test]
-    // async fn test_sync_identical_datasets() {
-    //     // Create two nodes with identical data
-    //     // Verify sync completes quickly with no transfers
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_sync_different_datasets() {
-    //     // Create two nodes with different data
-    //     // Run sync and verify both nodes converge to same state
-    // }
+    // ───────────── Snapshots ─────────────
+
+    /// Build local Merkle snapshot from scan("") + get().
+    async fn build_local_merkle_snapshot(&self) -> (MerkleTree, HashMap<String, String>) {
+        let mut t = MerkleTree::new();
+        let mut map = HashMap::new();
+
+        let mut guard = self.store.lock().await;
+        let keys = guard.scan(""); // empty prefix → all keys
+        for k in keys {
+            if let Some(v) = guard.get(&k) {
+                t.insert(&k, &v);
+                map.insert(k, v);
+            }
+        }
+        drop(guard);
+
+        (t, map)
+    }
+
+    /// Build remote Merkle snapshot by calling SCAN + GET over TCP.
+    async fn build_remote_merkle_snapshot(
+        &self,
+        addr: &str,
+    ) -> Result<(MerkleTree, HashMap<String, String>)> {
+        let keys = self.read_remote_keys_via_scan(addr).await?;
+        let mut t = MerkleTree::new();
+        let mut map = HashMap::new();
+
+        for k in keys {
+            match self.read_remote_value_plain(addr, &k).await? {
+                Some(v) => {
+                    t.insert(&k, &v);
+                    map.insert(k, v);
+                }
+                None => {
+                    // Key disappeared between SCAN and GET; just skip.
+                }
+            }
+        }
+
+        Ok((t, map))
+    }
+
+    // ───────────── Wire I/O ─────────────
+
+    /// SCAN (all keys): send "SCAN \r\n" → expect:
+    ///  "KEYS <n>\r\n"
+    ///   then n lines, each is one key.
+    async fn read_remote_keys_via_scan(&self, addr: &str) -> Result<Vec<String>> {
+        debug!("→ {} : SCAN", addr);
+        let mut stream = TcpStream::connect(addr)
+            .await
+            .with_context(|| format!("connect {}", addr))?;
+        stream.write_all(b"SCAN \r\n").await.context("write SCAN")?;
+
+        let mut reader = BufReader::new(stream);
+
+        // First line: "KEYS <n>\r\n"
+        let mut header = String::new();
+        let n = reader.read_line(&mut header).await?;
+        if n == 0 {
+            return Err(anyhow!("peer closed while reading SCAN header"));
+        }
+        let header = header.trim_end();
+        let mut it = header.split_whitespace();
+        if it.next() != Some("KEYS") {
+            return Err(anyhow!("unexpected SCAN response: {}", header));
+        }
+        let count: usize = it
+            .next()
+            .ok_or_else(|| anyhow!("missing count after KEYS"))?
+            .parse()
+            .context("invalid count after KEYS")?;
+
+        // Next <count> lines: keys
+        let mut keys = Vec::with_capacity(count);
+        for _ in 0..count {
+            let mut line = String::new();
+            let n = reader.read_line(&mut line).await?;
+            if n == 0 {
+                return Err(anyhow!("peer closed while reading key list"));
+            }
+            keys.push(line.trim_end().to_string());
+        }
+
+        debug!("← {} : KEYS {}", addr, keys.len());
+        Ok(keys)
+    }
+
+    /// GET one key: "GET <key>\r\n" → "VALUE <plain>\r\n" or "NOT_FOUND\r\n"
+    async fn read_remote_value_plain(&self, addr: &str, key: &str) -> Result<Option<String>> {
+        let cmd = format!("GET {key}\r\n");
+        debug!("→ {} : {}", addr, cmd.trim_end());
+        let mut stream = TcpStream::connect(addr)
+            .await
+            .with_context(|| format!("connect {}", addr))?;
+        stream.write_all(cmd.as_bytes()).await.context("write GET")?;
+
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 {
+            return Err(anyhow!("peer closed on GET {}", key));
+        }
+        let line = line.trim_end();
+        if line == "NOT_FOUND" {
+            return Ok(None);
+        }
+        if let Some(rest) = line.strip_prefix("VALUE ") {
+            return Ok(Some(rest.to_string()));
+        }
+        Err(anyhow!("unexpected GET response for {key}: {}", line))
+    }
 }
