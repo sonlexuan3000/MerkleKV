@@ -113,7 +113,7 @@ pub struct ServerStats {
     /// Number of SYNC commands processed
     pub sync_commands: AtomicU64,
 
-    /// number of hash commands processed
+    /// Number of hash commands processed
     pub hash_commands: AtomicU64,
 
     /// number of replication actions performed
