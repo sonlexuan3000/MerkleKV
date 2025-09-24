@@ -138,9 +138,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=7379)
-    ap.add_argument("--peer-host", default=None, help="Peer host để test SYNC")
-    ap.add_argument("--peer-port", type=int, default=None, help="Peer port để test SYNC")
-    ap.add_argument("--verify", action="store_true", help="Thêm --verify vào lệnh SYNC")
+    ap.add_argument("--peer-host", default=None, help="Peer host for SYNC testing")
+    ap.add_argument("--peer-port", type=int, default=None, help="Peer port for SYNC testing")
+    ap.add_argument("--verify", action="store_true", help="Add --verify to SYNC command")
     args = ap.parse_args()
 
     # Kết nối node chính để chạy các test cũ
