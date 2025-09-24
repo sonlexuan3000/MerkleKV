@@ -86,7 +86,7 @@ def test_sync(local_host, local_port, remote_host, remote_port, verify=False):
         assert send_cmd(sl, "FLUSHDB") == "OK"
         assert send_cmd(sr, "FLUSHDB") == "OK"
 
-        # Seed remote một ít key
+        # Seed remote with some keys
         assert send_cmd(sr, "SET r:1 Ralpha") == "OK"
         assert send_cmd(sr, "SET r:2 Rbeta") == "OK"
         assert send_cmd(sr, "SET user:1 U-Alice") == "OK"
